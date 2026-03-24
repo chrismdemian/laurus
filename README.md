@@ -4,7 +4,7 @@
 
 **Canvas LMS from your terminal.**
 
-Courses, assignments, grades, files, and deadlines — without opening a browser. Built for students, powered by agents.
+Courses, assignments, grades, files, and deadlines - without opening a browser. Built for students, powered by agents.
 
 [![GitHub Stars](https://img.shields.io/github/stars/chrismdemian/laurus?style=flat&logo=github&cacheSeconds=300)](https://github.com/chrismdemian/laurus)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -16,7 +16,7 @@ Courses, assignments, grades, files, and deadlines — without opening a browser
 
 ## What is this?
 
-Laurus is a CLI, TUI, and MCP server for [Canvas LMS](https://www.instructure.com/canvas) — the platform used by thousands of universities. One binary, three modes:
+Laurus is a CLI, TUI, and MCP server for [Canvas LMS](https://www.instructure.com/canvas) -the platform used by thousands of universities. One binary, three modes:
 
 ```bash
 laurus next                    # CLI: what's due next?
@@ -24,7 +24,7 @@ laurus tui                     # TUI: interactive lazygit-style dashboard
 laurus mcp serve               # MCP: plug into Claude, Symphony, or OpenClaw
 ```
 
-Works with any Canvas instance. Laurus is Latin for "laurel" — the tree of academic achievement.
+Works with any Canvas instance. Laurus is Latin for "laurel", the tree of academic achievement.
 
 ---
 
@@ -71,7 +71,7 @@ laurus tui
 
 ### CLI Mode
 
-The daily drivers — fast, scriptable, pipe-friendly.
+The daily drivers. Fast, scriptable, pipe-friendly.
 
 | Command | Description |
 |---------|-------------|
@@ -90,29 +90,29 @@ Every command supports `--json` for scripting and `--cached` for offline use.
 
 ### TUI Mode
 
-A lazygit-style interactive terminal dashboard. Navigate courses, browse assignments, check grades, read announcements — all with vim keybindings.
+A lazygit-style interactive terminal dashboard. Navigate courses, browse assignments, check grades, read announcements -all with vim keybindings.
 
 ```
 laurus tui
 ```
 
 ```
-┌─ Courses ──────────┬─ Assignments ────────────────┬─ Details ──────────────────┐
-│                     │                              │                            │
-│ > CSC108            │   Assignment 3               │  Binary Search Trees       │
-│   MAT137            │   Problem Set 7              │                            │
-│   ECE253            │ > Lab Report 4          ←    │  Due: Tomorrow 11:59 PM    │
-│   PHY180            │   Reading Response 6         │  Points: 40               │
-│   ENG195            │                              │  Submitted: No            │
-│                     │                              │                            │
-├─────────────────────┴──────────────────────────────┤  Rubric:                  │
-│ Status: 3 due this week | 1 overdue | 2 unread     │  - Correctness (20)       │
-└────────────────────────────────────────────────────┴────────────────────────────┘
+┌─ Courses ──────────┬─ Assignments ──────────────┬─ Details ─────────────────┐
+│                    │                            │                           │
+│ > CSC108           │   Assignment 3             │  Binary Search Trees      │
+│   MAT137           │   Problem Set 7            │                           │
+│   ECE253           │ > Lab Report 4             │  Due: Tomorrow 11:59 PM   │
+│   PHY180           │   Reading Response 6       │  Points: 40               │
+│   ENG195           │                            │  Submitted: No            │
+│                    │                            │                           │
+├────────────────────┴────────────────────────────┤  Rubric:                  │
+│  Status: 3 due this week | 1 overdue | 2 unread │  - Correctness (20)       │
+└─────────────────────────────────────────────────┴───────────────────────────┘
 ```
 
 ### MCP Server Mode
 
-Plug Canvas into any AI assistant. Claude, Symphony, Cursor, OpenClaw — anything that speaks [MCP](https://modelcontextprotocol.io).
+Plug Canvas into any AI assistant. Claude, Symphony, Cursor, OpenClaw -anything that speaks [MCP](https://modelcontextprotocol.io).
 
 ```bash
 laurus mcp serve
@@ -130,11 +130,11 @@ laurus mcp serve
 }
 ```
 
-Now your AI assistant can check deadlines, read assignments, look up grades, and submit homework — on your behalf.
+Now your AI assistant can check deadlines, read assignments, look up grades, and submit homework on your behalf.
 
 ### Grade Calculator
 
-The first tool to match Canvas's exact grade calculation algorithm — weighted groups, drop-lowest rules (Kane & Kane bisection), extra credit, excused assignments. No more broken third-party calculators.
+The first tool to match Canvas's exact grade calculation algorithm: weighted groups, drop-lowest rules (Kane & Kane bisection), extra credit, excused assignments. No more broken third-party calculators.
 
 ```bash
 laurus grades CSC108 --detailed         # per-assignment breakdown with rubric
@@ -169,31 +169,32 @@ interval = 300
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                 laurus binary                   │
-├──────────┬──────────┬──────────┬────────────────┤
-│ CLI Mode │ TUI Mode │ MCP Mode │ Daemon Mode    │
-│ (cobra)  │(bubbletea)│ (mcp-go)│ (background)   │
-├──────────┴──────────┴──────────┴────────────────┤
-│              Core Library                        │
-│  ┌──────────┐ ┌───────────┐ ┌────────────────┐  │
-│  │ Canvas   │ │ Grade     │ │ HTML→Terminal  │  │
-│  │ API      │ │ Calculator│ │ Renderer       │  │
-│  │ Client   │ │ (exact)   │ │                │  │
-│  ├──────────┤ ├───────────┤ ├────────────────┤  │
-│  │ GraphQL  │ │ File Sync │ │ Notification   │  │
-│  │ + REST   │ │ Engine    │ │ Engine         │  │
-│  ├──────────┤ ├───────────┤ ├────────────────┤  │
-│  │ SQLite   │ │ Auth &    │ │ Calendar       │  │
-│  │ Cache    │ │ Keychain  │ │ Export         │  │
-│  └──────────┘ └───────────┘ └────────────────┘  │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                    laurus binary                    │
+├────────────┬──────────────┬──────────┬──────────────┤
+│  CLI Mode  │   TUI Mode   │ MCP Mode │  Daemon Mode │
+│  (cobra)   │  (bubbletea) │ (mcp-go) │ (background) │
+├────────────┴──────────────┴──────────┴──────────────┤
+│                    Core Library                     │
+│                                                     │
+│  ┌──────────┐   ┌───────────┐   ┌────────────────┐  │
+│  │ Canvas   │   │ Grade     │   │ HTML Renderer  │  │
+│  │ API      │   │ Calculator│   │                │  │
+│  │ Client   │   │ (exact)   │   │                │  │
+│  ├──────────┤   ├───────────┤   ├────────────────┤  │
+│  │ GraphQL  │   │ File Sync │   │ Notification   │  │
+│  │ + REST   │   │ Engine    │   │ Engine         │  │
+│  ├──────────┤   ├───────────┤   ├────────────────┤  │
+│  │ SQLite   │   │ Auth &    │   │ Calendar       │  │
+│  │ Cache    │   │ Keychain  │   │ Export         │  │
+│  └──────────┘   └───────────┘   └────────────────┘  │
+└─────────────────────────────────────────────────────┘
 ```
 
-- **REST + GraphQL hybrid** — GraphQL for bulk queries (courses + assignments + submissions in one call), REST for mutations and file uploads
-- **SQLite cache** with WAL mode — offline reads, incremental sync, sub-millisecond lookups
+- **REST + GraphQL hybrid** - GraphQL for bulk queries (courses + assignments + submissions in one call), REST for mutations and file uploads
+- **SQLite cache** with WAL mode - offline reads, incremental sync, sub-millisecond lookups
 - **OS keychain** for token storage (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux)
-- **Smart polling** — `graded_since` and `start_date` parameters for efficient change detection
+- **Smart polling** - `graded_since` and `start_date` parameters for efficient change detection
 
 ---
 
