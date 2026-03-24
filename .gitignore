@@ -1,0 +1,44 @@
+# Binary
+quercus
+quercus.exe
+dist/
+
+# Go
+vendor/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Cache / data
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test
+coverage.out
+coverage.html
+
+# Screenshots (visual verification)
+.playwright-mcp/
+
+# Project docs (not distributed)
+CLAUDE.md
+AGENTS.md
+PRODUCT.md
+research-*.md
+
+# Logs
+*.log

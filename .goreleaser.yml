@@ -1,0 +1,54 @@
+version: 2
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/chrismdemian/quercus/cmd.version={{.Version}}
+      - -X github.com/chrismdemian/quercus/cmd.commit={{.Commit}}
+      - -X github.com/chrismdemian/quercus/cmd.date={{.Date}}
+
+archives:
+  - formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+brews:
+  - repository:
+      owner: chrismdemian
+      name: homebrew-tap
+    homepage: "https://github.com/chrismdemian/quercus"
+    description: "Canvas LMS from your terminal"
+    license: "Apache-2.0"
+
+scoops:
+  - repository:
+      owner: chrismdemian
+      name: scoop-bucket
+    homepage: "https://github.com/chrismdemian/quercus"
+    description: "Canvas LMS from your terminal"
+    license: "Apache-2.0"
