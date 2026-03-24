@@ -34,11 +34,15 @@ coverage.html
 # Screenshots (visual verification)
 .playwright-mcp/
 
-# Project docs (not distributed)
+# Claude Code
 CLAUDE.md
 AGENTS.md
 PRODUCT.md
+BUILD_PLAN.md
 research-*.md
+.claude/*
+!.claude/rules/
+!.claude/settings.local.json
 
 # Logs
 *.log
