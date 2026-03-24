@@ -13,9 +13,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "quercus",
+	Use:   "laurus",
 	Short: "Canvas LMS from your terminal",
-	Long:  "Quercus — courses, assignments, grades, and files without opening a browser.",
+	Long:  "Laurus — courses, assignments, grades, and files without opening a browser.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
@@ -30,7 +30,7 @@ func init() {
 		Use:   "version",
 		Short: "Print the version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("quercus %s (%s) built %s\n", version, commit, date)
+			fmt.Printf("laurus %s (%s) built %s\n", version, commit, date)
 		},
 	})
 

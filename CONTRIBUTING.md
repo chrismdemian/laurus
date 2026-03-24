@@ -1,11 +1,11 @@
-# Contributing to Quercus
+# Contributing to Laurus
 
 Thanks for your interest in contributing!
 
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/your-username/quercus.git`
+2. Clone your fork: `git clone https://github.com/your-username/laurus.git`
 3. Install Go 1.26+: [go.dev/dl](https://go.dev/dl/)
 4. Install dependencies: `go mod download`
 5. Create a branch: `git checkout -b feature/your-feature`
@@ -14,7 +14,7 @@ Thanks for your interest in contributing!
 
 ```bash
 # Build
-go build -o quercus .
+go build -o laurus .
 
 # Run
 go run . next

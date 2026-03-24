@@ -1,12 +1,12 @@
 <div align="center">
 
-# Quercus
+# Laurus
 
 **Canvas LMS from your terminal.**
 
 Courses, assignments, grades, files, and deadlines — without opening a browser. Built for students, powered by agents.
 
-[![GitHub Stars](https://img.shields.io/github/stars/chrismdemian/quercus?style=flat&logo=github&cacheSeconds=300)](https://github.com/chrismdemian/quercus)
+[![GitHub Stars](https://img.shields.io/github/stars/chrismdemian/laurus?style=flat&logo=github&cacheSeconds=300)](https://github.com/chrismdemian/laurus)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 
@@ -16,35 +16,35 @@ Courses, assignments, grades, files, and deadlines — without opening a browser
 
 ## What is this?
 
-Quercus is a CLI, TUI, and MCP server for [Canvas LMS](https://www.instructure.com/canvas) — the platform used by thousands of universities. One binary, three modes:
+Laurus is a CLI, TUI, and MCP server for [Canvas LMS](https://www.instructure.com/canvas) — the platform used by thousands of universities. One binary, three modes:
 
 ```bash
-quercus next                    # CLI: what's due next?
-quercus tui                     # TUI: interactive lazygit-style dashboard
-quercus mcp serve               # MCP: plug into Claude, Symphony, or OpenClaw
+laurus next                    # CLI: what's due next?
+laurus tui                     # TUI: interactive lazygit-style dashboard
+laurus mcp serve               # MCP: plug into Claude, Symphony, or OpenClaw
 ```
 
-Works with any Canvas instance. Named after UofT's Canvas deployment ([Quercus](https://q.utoronto.ca)), but works everywhere.
+Works with any Canvas instance. Laurus is Latin for "laurel" — the tree of academic achievement.
 
 ---
 
 ## Install
 
-Coming soon. Quercus will be available via:
+Coming soon. Laurus will be available via:
 
 ```bash
 # macOS
-brew install chrismdemian/tap/quercus
+brew install chrismdemian/tap/laurus
 
 # Windows
-scoop install quercus
-winget install chrismdemian.quercus
+scoop install laurus
+winget install chrismdemian.laurus
 
 # Linux / macOS / WSL
-curl -fsSL https://quercus.dev/install.sh | sh
+curl -fsSL https://laurus.dev/install.sh | sh
 
 # From source
-go install github.com/chrismdemian/quercus@latest
+go install github.com/chrismdemian/laurus@latest
 ```
 
 ---
@@ -53,16 +53,16 @@ go install github.com/chrismdemian/quercus@latest
 
 ```bash
 # 1. Authenticate with your Canvas instance
-quercus auth login
+laurus auth login
 
 # 2. See what's due
-quercus next
+laurus next
 
 # 3. Check your grades
-quercus grades
+laurus grades
 
 # 4. Launch the interactive dashboard
-quercus tui
+laurus tui
 ```
 
 ---
@@ -75,16 +75,16 @@ The daily drivers — fast, scriptable, pipe-friendly.
 
 | Command | Description |
 |---------|-------------|
-| `quercus next` | Next due assignment across all courses |
-| `quercus assignments` | All upcoming assignments, sorted by urgency |
-| `quercus grades` | Current grades across all courses |
-| `quercus grades --what-if "CSC108:85"` | Simulate final grades |
-| `quercus announcements` | Recent announcements across all courses |
-| `quercus files sync` | Sync all course files locally |
-| `quercus submit <course> <assignment> <file>` | Submit from the terminal |
-| `quercus calendar --export` | Export deadlines to `.ics` |
-| `quercus inbox` | Read and send Canvas messages |
-| `quercus search <query>` | AI-powered semantic search across courses |
+| `laurus next` | Next due assignment across all courses |
+| `laurus assignments` | All upcoming assignments, sorted by urgency |
+| `laurus grades` | Current grades across all courses |
+| `laurus grades --what-if "CSC108:85"` | Simulate final grades |
+| `laurus announcements` | Recent announcements across all courses |
+| `laurus files sync` | Sync all course files locally |
+| `laurus submit <course> <assignment> <file>` | Submit from the terminal |
+| `laurus calendar --export` | Export deadlines to `.ics` |
+| `laurus inbox` | Read and send Canvas messages |
+| `laurus search <query>` | AI-powered semantic search across courses |
 
 Every command supports `--json` for scripting and `--cached` for offline use.
 
@@ -93,7 +93,7 @@ Every command supports `--json` for scripting and `--cached` for offline use.
 A lazygit-style interactive terminal dashboard. Navigate courses, browse assignments, check grades, read announcements — all with vim keybindings.
 
 ```
-quercus tui
+laurus tui
 ```
 
 ```
@@ -115,7 +115,7 @@ quercus tui
 Plug Canvas into any AI assistant. Claude, Symphony, Cursor, OpenClaw — anything that speaks [MCP](https://modelcontextprotocol.io).
 
 ```bash
-quercus mcp serve
+laurus mcp serve
 ```
 
 ```json
@@ -123,7 +123,7 @@ quercus mcp serve
 {
   "mcpServers": {
     "canvas": {
-      "command": "quercus",
+      "command": "laurus",
       "args": ["mcp", "serve"]
     }
   }
@@ -137,9 +137,9 @@ Now your AI assistant can check deadlines, read assignments, look up grades, and
 The first tool to match Canvas's exact grade calculation algorithm — weighted groups, drop-lowest rules (Kane & Kane bisection), extra credit, excused assignments. No more broken third-party calculators.
 
 ```bash
-quercus grades CSC108 --detailed         # per-assignment breakdown with rubric
-quercus grades --what-if "CSC108:A"      # simulate final exam scores
-quercus grades --gpa                     # compute GPA across all courses
+laurus grades CSC108 --detailed         # per-assignment breakdown with rubric
+laurus grades --what-if "CSC108:A"      # simulate final exam scores
+laurus grades --gpa                     # compute GPA across all courses
 ```
 
 ### Offline Mode
@@ -147,8 +147,8 @@ quercus grades --gpa                     # compute GPA across all courses
 Everything is cached locally in SQLite. Check grades on the subway. Review assignments on a plane.
 
 ```bash
-quercus sync                             # sync all data + files
-quercus assignments --cached             # read from cache, no network
+laurus sync                             # sync all data + files
+laurus assignments --cached             # read from cache, no network
 ```
 
 ### Shell Integration
@@ -158,7 +158,7 @@ Ambient awareness without opening anything.
 ```toml
 # ~/.config/starship.toml
 [custom.canvas]
-command = "quercus status --short"
+command = "laurus status --short"
 format = "[$output]($style) "
 style = "yellow"
 interval = 300
@@ -170,7 +170,7 @@ interval = 300
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                 quercus binary                   │
+│                 laurus binary                   │
 ├──────────┬──────────┬──────────┬────────────────┤
 │ CLI Mode │ TUI Mode │ MCP Mode │ Daemon Mode    │
 │ (cobra)  │(bubbletea)│ (mcp-go)│ (background)   │
@@ -199,7 +199,7 @@ interval = 300
 
 ## Supported Canvas Features
 
-Quercus covers the full Canvas student API surface:
+Laurus covers the full Canvas student API surface:
 
 | Category | Endpoints | Status |
 |----------|-----------|--------|
@@ -224,12 +224,12 @@ Quercus covers the full Canvas student API surface:
 ## Configuration
 
 ```bash
-quercus auth login
+laurus auth login
 # Opens Canvas in your browser → paste your API token
 # Token stored in OS keychain, never in plaintext
 ```
 
-Config lives at `~/.config/quercus/config.toml`:
+Config lives at `~/.config/laurus/config.toml`:
 
 ```toml
 [canvas]

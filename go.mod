@@ -1,4 +1,4 @@
-module github.com/chrismdemian/quercus
+module github.com/chrismdemian/laurus
 
 go 1.26.1
 

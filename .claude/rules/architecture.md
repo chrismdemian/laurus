@@ -10,12 +10,12 @@ paths:
 ## Directory Structure
 
 ```
-quercus/
+laurus/
 ├── main.go                    # Entry point — calls cmd.Execute()
 ├── cmd/root.go                # Cobra root command, global flags, version
 ├── internal/                  # Private packages (not importable externally)
 │   ├── canvas/                # Canvas LMS REST + GraphQL API client
-│   ├── config/                # Config loading (~/.config/quercus/config.toml)
+│   ├── config/                # Config loading (~/.config/laurus/config.toml)
 │   ├── auth/                  # Token management, OS keychain integration
 │   ├── cache/                 # SQLite cache (WAL mode, per-resource TTL)
 │   └── iostreams/             # Color, pager, stdout/stderr abstraction

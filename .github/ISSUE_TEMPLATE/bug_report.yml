@@ -28,8 +28,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: Quercus version
-      description: "Output of `quercus version`"
+      label: Laurus version
+      description: "Output of `laurus version`"
     validations:
       required: true
   - type: input
