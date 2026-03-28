@@ -3,6 +3,7 @@ package files
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -65,6 +66,14 @@ func renderFileTable(ctx context.Context, client *canvas.Client, ios *iostreams.
 		Order: "asc",
 	}) {
 		if err != nil {
+			if errors.Is(err, canvas.ErrForbidden) {
+				_, _ = fmt.Fprintln(ios.Out, "You don't have permission to view files in this course.")
+				return nil
+			}
+			if errors.Is(err, canvas.ErrNotFound) {
+				_, _ = fmt.Fprintln(ios.Out, "Files are disabled for this course.")
+				return nil
+			}
 			return fmt.Errorf("listing files: %w", err)
 		}
 		files = append(files, f)
@@ -112,6 +121,10 @@ func renderFileTree(ctx context.Context, client *canvas.Client, ios *iostreams.I
 	var folders []canvas.Folder
 	for f, err := range canvas.ListFolders(ctx, client, course.ID) {
 		if err != nil {
+			if errors.Is(err, canvas.ErrForbidden) {
+				_, _ = fmt.Fprintln(ios.Out, "You don't have permission to view files in this course.")
+				return nil
+			}
 			return fmt.Errorf("listing folders: %w", err)
 		}
 		folders = append(folders, f)
@@ -120,6 +133,10 @@ func renderFileTree(ctx context.Context, client *canvas.Client, ios *iostreams.I
 	var files []canvas.File
 	for f, err := range canvas.ListFiles(ctx, client, course.ID, canvas.ListFilesOptions{}) {
 		if err != nil {
+			if errors.Is(err, canvas.ErrForbidden) {
+				_, _ = fmt.Fprintln(ios.Out, "You don't have permission to view files in this course.")
+				return nil
+			}
 			return fmt.Errorf("listing files: %w", err)
 		}
 		files = append(files, f)

@@ -3,6 +3,7 @@ package pages
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -47,6 +48,14 @@ func listRun(f *cmdutil.Factory, courseQuery string) error {
 		Order: "asc",
 	}) {
 		if err != nil {
+			if errors.Is(err, canvas.ErrNotFound) {
+				_, _ = fmt.Fprintln(ios.Out, "Pages are disabled for this course.")
+				return nil
+			}
+			if errors.Is(err, canvas.ErrForbidden) {
+				_, _ = fmt.Fprintln(ios.Out, "You don't have permission to view pages in this course.")
+				return nil
+			}
 			return fmt.Errorf("listing pages: %w", err)
 		}
 		pages = append(pages, p)

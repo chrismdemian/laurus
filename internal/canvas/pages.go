@@ -65,10 +65,15 @@ func FindPage(ctx context.Context, c *Client, courseID int64, query string) (Pag
 		return Page{}, fmt.Errorf("looking up page %q: %w", query, err)
 	}
 
-	// Collect all pages for fuzzy search
+	// Collect all pages for fuzzy search.
+	// ListPages may 404 if the Pages tab is disabled — that's not fatal,
+	// it just means we can't do fuzzy search (pages may still exist via modules).
 	var pages []Page
 	for p, err := range ListPages(ctx, c, courseID, ListPagesOptions{}) {
 		if err != nil {
+			if errors.Is(err, ErrNotFound) || errors.Is(err, ErrForbidden) {
+				break // Pages tab disabled or restricted — skip fuzzy search
+			}
 			return Page{}, fmt.Errorf("listing pages for search: %w", err)
 		}
 		pages = append(pages, p)
