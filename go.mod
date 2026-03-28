@@ -11,6 +11,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/pelletier/go-toml/v2 v2.3.0
 	github.com/peterhellberg/link v1.2.0
+	github.com/shopspring/decimal v1.4.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/net v0.47.0
 	golang.org/x/term v0.41.0

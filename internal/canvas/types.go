@@ -8,20 +8,22 @@ import "time"
 
 // Course represents a Canvas course.
 type Course struct {
-	ID               int64        `json:"id"`
-	Name             string       `json:"name"`
-	CourseCode       string       `json:"course_code"`
-	EnrollmentTermID int64        `json:"enrollment_term_id"`
-	StartAt          *time.Time   `json:"start_at"`
-	EndAt            *time.Time   `json:"end_at"`
-	TimeZone         string       `json:"time_zone"`
-	SyllabusBody     *string      `json:"syllabus_body"`
-	Teachers         []User       `json:"teachers"`
-	WorkflowState    string       `json:"workflow_state"`
-	TotalStudents    *int         `json:"total_students"`
-	UUID             string       `json:"uuid"`
-	Enrollments      []Enrollment `json:"enrollments"`
-	HTMLURL          string       `json:"html_url"`
+	ID                          int64        `json:"id"`
+	Name                        string       `json:"name"`
+	CourseCode                  string       `json:"course_code"`
+	EnrollmentTermID            int64        `json:"enrollment_term_id"`
+	StartAt                     *time.Time   `json:"start_at"`
+	EndAt                       *time.Time   `json:"end_at"`
+	TimeZone                    string       `json:"time_zone"`
+	SyllabusBody                *string      `json:"syllabus_body"`
+	Teachers                    []User       `json:"teachers"`
+	WorkflowState               string       `json:"workflow_state"`
+	TotalStudents               *int         `json:"total_students"`
+	UUID                        string       `json:"uuid"`
+	Enrollments                 []Enrollment `json:"enrollments"`
+	HTMLURL                     string       `json:"html_url"`
+	ApplyAssignmentGroupWeights bool         `json:"apply_assignment_group_weights"`
+	GradingStandardID           *int64       `json:"grading_standard_id"`
 }
 
 // User represents a Canvas user profile.
@@ -80,6 +82,17 @@ type Assignment struct {
 	Position           int               `json:"position"`
 	Submission         *Submission       `json:"submission"` // populated with include[]=submission
 	Missing            bool              `json:"missing"`
+	ScoreStatistics    *ScoreStatistics  `json:"score_statistics"` // populated with include[]=score_statistics
+}
+
+// ScoreStatistics holds class-wide score distribution for an assignment.
+type ScoreStatistics struct {
+	Mean   *float64 `json:"mean"`
+	Min    *float64 `json:"min"`
+	Max    *float64 `json:"max"`
+	Median *float64 `json:"median"`
+	LowerQ *float64 `json:"lower_q"`
+	UpperQ *float64 `json:"upper_q"`
 }
 
 // RubricCriterion represents one criterion in an assignment rubric.
@@ -138,6 +151,7 @@ type AssignmentGroup struct {
 	Name        string               `json:"name"`
 	GroupWeight float64              `json:"group_weight"`
 	Rules       AssignmentGroupRules `json:"rules"`
+	Assignments []Assignment         `json:"assignments"` // populated with include[]=assignments
 }
 
 // AssignmentGroupRules controls drop behavior for a group.

@@ -12,6 +12,7 @@ import (
 	assignmentscmd "github.com/chrismdemian/laurus/pkg/cmd/assignments"
 	authcmd "github.com/chrismdemian/laurus/pkg/cmd/auth"
 	coursescmd "github.com/chrismdemian/laurus/pkg/cmd/courses"
+	gradescmd "github.com/chrismdemian/laurus/pkg/cmd/grades"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
 
@@ -92,4 +93,6 @@ func init() {
 	rootCmd.AddCommand(assignmentscmd.NewCmdAssignments(f))
 	rootCmd.AddCommand(assignmentscmd.NewCmdAssignment(f))
 	rootCmd.AddCommand(assignmentscmd.NewCmdNext(f))
+	rootCmd.AddCommand(gradescmd.NewCmdGrades(f))
+	rootCmd.AddCommand(gradescmd.NewCmdGrade(f))
 }
