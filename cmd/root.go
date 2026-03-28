@@ -9,6 +9,7 @@ import (
 	"github.com/chrismdemian/laurus/internal/canvas"
 	"github.com/chrismdemian/laurus/internal/config"
 	"github.com/chrismdemian/laurus/internal/iostreams"
+	announcementscmd "github.com/chrismdemian/laurus/pkg/cmd/announcements"
 	assignmentscmd "github.com/chrismdemian/laurus/pkg/cmd/assignments"
 	authcmd "github.com/chrismdemian/laurus/pkg/cmd/auth"
 	coursescmd "github.com/chrismdemian/laurus/pkg/cmd/courses"
@@ -87,6 +88,8 @@ func init() {
 		return canvas.NewClient(cfg.CanvasURL, td.Token, f.Version), nil
 	}
 
+	rootCmd.AddCommand(announcementscmd.NewCmdAnnouncements(f))
+	rootCmd.AddCommand(announcementscmd.NewCmdAnnouncement(f))
 	rootCmd.AddCommand(authcmd.NewCmdAuth(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourses(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourse(f))
