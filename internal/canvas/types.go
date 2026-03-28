@@ -78,6 +78,8 @@ type Assignment struct {
 	CourseID           int64             `json:"course_id"`
 	HTMLURL            string            `json:"html_url"`
 	Position           int               `json:"position"`
+	Submission         *Submission       `json:"submission"` // populated with include[]=submission
+	Missing            bool              `json:"missing"`
 }
 
 // RubricCriterion represents one criterion in an assignment rubric.
@@ -290,15 +292,17 @@ type ConversationMessage struct {
 
 // CalendarEvent represents a Canvas calendar event.
 type CalendarEvent struct {
-	ID            int64      `json:"id"`
-	Title         string     `json:"title"`
-	StartAt       *time.Time `json:"start_at"`
-	EndAt         *time.Time `json:"end_at"`
-	Description   *string    `json:"description"`
-	ContextCode   string     `json:"context_code"`
-	WorkflowState string     `json:"workflow_state"`
-	AllDay        bool       `json:"all_day"`
-	HTMLURL       string     `json:"html_url"`
+	ID            int64       `json:"id"`
+	Title         string      `json:"title"`
+	StartAt       *time.Time  `json:"start_at"`
+	EndAt         *time.Time  `json:"end_at"`
+	Description   *string     `json:"description"`
+	ContextCode   string      `json:"context_code"`
+	WorkflowState string      `json:"workflow_state"`
+	AllDay        bool        `json:"all_day"`
+	HTMLURL       string      `json:"html_url"`
+	Assignment    *Assignment `json:"assignment"` // present for assignment-type upcoming events
+	Type          string      `json:"type"`       // "event" or "assignment"
 }
 
 // PlannerItem represents an item on the Canvas planner.
@@ -319,6 +323,16 @@ type PlannerNote struct {
 	Details  *string    `json:"details"`
 	TodoDate *time.Time `json:"todo_date"`
 	CourseID *int64     `json:"course_id"`
+}
+
+// TodoItem represents an item from the user's Canvas todo list.
+type TodoItem struct {
+	Type        string      `json:"type"` // "submitting" or "grading"
+	Assignment  *Assignment `json:"assignment"`
+	ContextType string      `json:"context_type"`
+	ContextName string      `json:"context_name"`
+	CourseID    *int64      `json:"course_id"`
+	HTMLURL     string      `json:"html_url"`
 }
 
 // GradingStandard represents a grading scheme (e.g., A/B/C letter grades).

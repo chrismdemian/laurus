@@ -9,6 +9,7 @@ import (
 	"github.com/chrismdemian/laurus/internal/canvas"
 	"github.com/chrismdemian/laurus/internal/config"
 	"github.com/chrismdemian/laurus/internal/iostreams"
+	assignmentscmd "github.com/chrismdemian/laurus/pkg/cmd/assignments"
 	authcmd "github.com/chrismdemian/laurus/pkg/cmd/auth"
 	coursescmd "github.com/chrismdemian/laurus/pkg/cmd/courses"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
@@ -88,4 +89,7 @@ func init() {
 	rootCmd.AddCommand(authcmd.NewCmdAuth(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourses(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourse(f))
+	rootCmd.AddCommand(assignmentscmd.NewCmdAssignments(f))
+	rootCmd.AddCommand(assignmentscmd.NewCmdAssignment(f))
+	rootCmd.AddCommand(assignmentscmd.NewCmdNext(f))
 }
