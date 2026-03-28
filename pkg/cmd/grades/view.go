@@ -16,6 +16,8 @@ import (
 	"github.com/chrismdemian/laurus/pkg/grade"
 )
 
+var hundred = decimal.NewFromInt(100)
+
 // NewCmdGrade returns the singular "grade" command for per-course breakdown.
 func NewCmdGrade(f *cmdutil.Factory) *cobra.Command {
 	var opts viewOpts
@@ -339,12 +341,13 @@ func decimalFromPtr(f *float64) decimal.Decimal {
 // What-if parsing
 // =============================================================================
 
-// parseWhatIf handles formats like "85" (apply to first ungraded) or "123:85,456:90".
+// parseWhatIf handles formats like "85" (percentage, applied to first ungraded)
+// or "123:85,456:90" (raw points per assignment ID).
 func parseWhatIf(input string, groups []canvas.AssignmentGroup) (map[int64]decimal.Decimal, error) {
 	whatIfs := make(map[int64]decimal.Decimal)
 
-	// Simple case: just a number → apply to first ungraded assignment with points.
-	if score, err := decimal.NewFromString(input); err == nil && !strings.Contains(input, ":") {
+	// Simple case: just a number → interpret as percentage, apply to first ungraded.
+	if pct, err := decimal.NewFromString(input); err == nil && !strings.Contains(input, ":") {
 		for _, g := range groups {
 			for _, a := range g.Assignments {
 				if !a.Published {
@@ -354,7 +357,9 @@ func parseWhatIf(input string, groups []canvas.AssignmentGroup) (map[int64]decim
 					continue
 				}
 				if a.Submission == nil || a.Submission.Score == nil {
-					whatIfs[a.ID] = score
+					// Convert percentage to raw points: 85% on a 10-point assignment = 8.5
+					pts := pct.Div(hundred).Mul(decimal.NewFromFloat(*a.PointsPossible))
+					whatIfs[a.ID] = pts
 					return whatIfs, nil
 				}
 			}
