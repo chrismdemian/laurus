@@ -14,8 +14,11 @@ import (
 	authcmd "github.com/chrismdemian/laurus/pkg/cmd/auth"
 	coursescmd "github.com/chrismdemian/laurus/pkg/cmd/courses"
 	discussionscmd "github.com/chrismdemian/laurus/pkg/cmd/discussions"
+	filescmd "github.com/chrismdemian/laurus/pkg/cmd/files"
 	gradescmd "github.com/chrismdemian/laurus/pkg/cmd/grades"
 	inboxcmd "github.com/chrismdemian/laurus/pkg/cmd/inbox"
+	modulescmd "github.com/chrismdemian/laurus/pkg/cmd/modules"
+	pagescmd "github.com/chrismdemian/laurus/pkg/cmd/pages"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
 
@@ -100,7 +103,13 @@ func init() {
 	rootCmd.AddCommand(assignmentscmd.NewCmdAssignments(f))
 	rootCmd.AddCommand(assignmentscmd.NewCmdAssignment(f))
 	rootCmd.AddCommand(assignmentscmd.NewCmdNext(f))
+	rootCmd.AddCommand(filescmd.NewCmdFiles(f))
+	rootCmd.AddCommand(filescmd.NewCmdDownload(f))
 	rootCmd.AddCommand(gradescmd.NewCmdGrades(f))
 	rootCmd.AddCommand(gradescmd.NewCmdGrade(f))
 	rootCmd.AddCommand(inboxcmd.NewCmdInbox(f))
+	rootCmd.AddCommand(modulescmd.NewCmdModules(f))
+	rootCmd.AddCommand(modulescmd.NewCmdMarkDone(f))
+	rootCmd.AddCommand(pagescmd.NewCmdPages(f))
+	rootCmd.AddCommand(pagescmd.NewCmdPage(f))
 }

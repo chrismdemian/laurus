@@ -167,17 +167,20 @@ type AssignmentGroupRules struct {
 
 // Module represents a Canvas course module.
 type Module struct {
-	ID                        int64      `json:"id"`
-	Name                      string     `json:"name"`
-	Position                  int        `json:"position"`
-	UnlockAt                  *time.Time `json:"unlock_at"`
-	RequireSequentialProgress bool       `json:"require_sequential_progress"`
-	ItemsCount                int        `json:"items_count"`
-	State                     *string    `json:"state"`
-	CompletedAt               *time.Time `json:"completed_at"`
-	PublishFinalGrade         bool       `json:"publish_final_grade"`
-	Published                 bool       `json:"published"`
-	ItemsURL                  string     `json:"items_url"`
+	ID                        int64        `json:"id"`
+	Name                      string       `json:"name"`
+	Position                  int          `json:"position"`
+	UnlockAt                  *time.Time   `json:"unlock_at"`
+	RequireSequentialProgress bool         `json:"require_sequential_progress"`
+	ItemsCount                int          `json:"items_count"`
+	State                     *string      `json:"state"`
+	CompletedAt               *time.Time   `json:"completed_at"`
+	PublishFinalGrade         bool         `json:"publish_final_grade"`
+	Published                 *bool        `json:"published"`
+	ItemsURL                  string       `json:"items_url"`
+	Items                     []ModuleItem `json:"items"`
+	WorkflowState             string       `json:"workflow_state"`
+	PrerequisiteModuleIDs     []int64      `json:"prerequisite_module_ids"`
 }
 
 // ModuleItem represents an item within a module.
@@ -186,13 +189,26 @@ type ModuleItem struct {
 	ModuleID              int64                  `json:"module_id"`
 	Position              int                    `json:"position"`
 	Title                 string                 `json:"title"`
+	Indent                int                    `json:"indent"`
 	Type                  string                 `json:"type"`
-	ContentID             int64                  `json:"content_id"`
+	ContentID             *int64                 `json:"content_id"`
 	HTMLURL               string                 `json:"html_url"`
 	URL                   *string                `json:"url"`
 	PageURL               *string                `json:"page_url"`
 	ExternalURL           *string                `json:"external_url"`
+	Published             *bool                  `json:"published"`
 	CompletionRequirement *CompletionRequirement `json:"completion_requirement"`
+	ContentDetails        *ContentDetails        `json:"content_details"`
+}
+
+// ContentDetails holds due date, lock, and points info for a module item.
+type ContentDetails struct {
+	PointsPossible  *float64   `json:"points_possible"`
+	DueAt           *time.Time `json:"due_at"`
+	UnlockAt        *time.Time `json:"unlock_at"`
+	LockAt          *time.Time `json:"lock_at"`
+	LockedForUser   bool       `json:"locked_for_user"`
+	LockExplanation string     `json:"lock_explanation"`
 }
 
 // CompletionRequirement describes what must be done to complete a module item.
@@ -204,28 +220,34 @@ type CompletionRequirement struct {
 
 // Page represents a Canvas wiki page.
 type Page struct {
-	PageID    int64     `json:"page_id"`
-	URL       string    `json:"url"`
-	Title     string    `json:"title"`
-	Body      *string   `json:"body"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Published bool      `json:"published"`
+	PageID        int64     `json:"page_id"`
+	URL           string    `json:"url"`
+	Title         string    `json:"title"`
+	Body          *string   `json:"body"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	Published     bool      `json:"published"`
+	FrontPage     bool      `json:"front_page"`
+	LockedForUser bool      `json:"locked_for_user"`
 }
 
 // File represents a Canvas file.
 type File struct {
-	ID          int64     `json:"id"`
-	UUID        string    `json:"uuid"`
-	FolderID    int64     `json:"folder_id"`
-	DisplayName string    `json:"display_name"`
-	Filename    string    `json:"filename"`
-	ContentType string    `json:"content-type"`
-	URL         string    `json:"url"`
-	Size        int64     `json:"size"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	ModifiedAt  time.Time `json:"modified_at"`
+	ID            int64     `json:"id"`
+	UUID          string    `json:"uuid"`
+	FolderID      int64     `json:"folder_id"`
+	DisplayName   string    `json:"display_name"`
+	Filename      string    `json:"filename"`
+	ContentType   string    `json:"content-type"`
+	URL           string    `json:"url"`
+	Size          int64     `json:"size"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	ModifiedAt    time.Time `json:"modified_at"`
+	LockedForUser bool      `json:"locked_for_user"`
+	Hidden        bool      `json:"hidden"`
+	HiddenForUser bool      `json:"hidden_for_user"`
+	MimeClass     string    `json:"mime_class"`
 }
 
 // Folder represents a Canvas folder.
@@ -240,6 +262,11 @@ type Folder struct {
 	FoldersCount   int       `json:"folders_count"`
 	FilesURL       string    `json:"files_url"`
 	FoldersURL     string    `json:"folders_url"`
+	LockedForUser  bool      `json:"locked_for_user"`
+	Hidden         bool      `json:"hidden"`
+	HiddenForUser  bool      `json:"hidden_for_user"`
+	ForSubmissions bool      `json:"for_submissions"`
+	Position       *int      `json:"position"`
 }
 
 // Announcement represents a Canvas announcement (a special discussion topic).
