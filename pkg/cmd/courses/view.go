@@ -117,22 +117,15 @@ func renderCourseDetail(f *cmdutil.Factory, course canvas.Course) error {
 	}
 
 	// Grade from enrollment
-	if e := findStudentEnrollment(course.Enrollments); e != nil && e.Grades != nil {
-		_, _ = fmt.Fprintln(ios.Out)
-		g := e.Grades
-		if g.CurrentScore != nil {
-			grade := fmt.Sprintf("%.1f%%", *g.CurrentScore)
-			if g.CurrentGrade != nil {
-				grade += fmt.Sprintf(" (%s)", *g.CurrentGrade)
+	if e := findStudentEnrollment(course.Enrollments); e != nil {
+		score, letter := enrollmentGrade(e)
+		if score != nil {
+			_, _ = fmt.Fprintln(ios.Out)
+			grade := fmt.Sprintf("%.1f%%", *score)
+			if letter != nil {
+				grade += fmt.Sprintf(" (%s)", *letter)
 			}
 			printField(ios, palette, "Current Grade", grade)
-		}
-		if g.FinalScore != nil {
-			grade := fmt.Sprintf("%.1f%%", *g.FinalScore)
-			if g.FinalGrade != nil {
-				grade += fmt.Sprintf(" (%s)", *g.FinalGrade)
-			}
-			printField(ios, palette, "Final Grade", grade)
 		}
 	}
 

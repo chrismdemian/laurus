@@ -43,6 +43,13 @@ type Enrollment struct {
 	Type            string            `json:"type"`
 	EnrollmentState string            `json:"enrollment_state"`
 	Grades          *EnrollmentGrades `json:"grades"`
+
+	// Computed fields — returned by GET /courses with include[]=total_scores.
+	// These are top-level on the enrollment, NOT inside the grades sub-object.
+	ComputedCurrentScore *float64 `json:"computed_current_score"`
+	ComputedFinalScore   *float64 `json:"computed_final_score"`
+	ComputedCurrentGrade *string  `json:"computed_current_grade"`
+	ComputedFinalGrade   *string  `json:"computed_final_grade"`
 }
 
 // EnrollmentGrades holds computed grade data for an enrollment.

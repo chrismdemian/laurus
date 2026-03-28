@@ -94,12 +94,13 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 
 	for _, c := range courses {
 		grade := "-"
-		if e := findStudentEnrollment(c.Enrollments); e != nil && e.Grades != nil {
-			if e.Grades.CurrentScore != nil {
-				if e.Grades.CurrentGrade != nil {
-					grade = fmt.Sprintf("%.1f%% (%s)", *e.Grades.CurrentScore, *e.Grades.CurrentGrade)
+		if e := findStudentEnrollment(c.Enrollments); e != nil {
+			score, letter := enrollmentGrade(e)
+			if score != nil {
+				if letter != nil {
+					grade = fmt.Sprintf("%.1f%% (%s)", *score, *letter)
 				} else {
-					grade = fmt.Sprintf("%.1f%%", *e.Grades.CurrentScore)
+					grade = fmt.Sprintf("%.1f%%", *score)
 				}
 			}
 		}
@@ -118,6 +119,20 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 	_ = ios.StartPager()
 	defer ios.StopPager()
 	return tbl.Render()
+}
+
+// enrollmentGrade extracts grade data from an enrollment, checking both the
+// nested grades object (from enrollments endpoint) and computed fields (from courses endpoint).
+func enrollmentGrade(e *canvas.Enrollment) (score *float64, letter *string) {
+	// Check computed fields first (from courses endpoint with include[]=total_scores)
+	if e.ComputedCurrentScore != nil {
+		return e.ComputedCurrentScore, e.ComputedCurrentGrade
+	}
+	// Fall back to nested grades object (from dedicated enrollments endpoint)
+	if e.Grades != nil && e.Grades.CurrentScore != nil {
+		return e.Grades.CurrentScore, e.Grades.CurrentGrade
+	}
+	return nil, nil
 }
 
 func findStudentEnrollment(enrollments []canvas.Enrollment) *canvas.Enrollment {
