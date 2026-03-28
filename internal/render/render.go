@@ -39,6 +39,23 @@ func CanvasHTML(rawHTML string, width int) (string, error) {
 	return convertAndRender(cleanHTML, width)
 }
 
+// CanvasHTMLToMarkdown converts Canvas HTML to plain markdown (no terminal styling).
+// Useful for saving content to .md files.
+func CanvasHTMLToMarkdown(rawHTML string) (string, error) {
+	if strings.TrimSpace(rawHTML) == "" {
+		return "", nil
+	}
+
+	doc, err := html.Parse(strings.NewReader(rawHTML))
+	if err != nil {
+		return htmltomd.ConvertString(rawHTML)
+	}
+
+	preprocess(doc)
+	cleanHTML := renderBody(doc)
+	return htmltomd.ConvertString(cleanHTML)
+}
+
 // convertAndRender converts HTML to markdown, then renders to terminal ANSI.
 func convertAndRender(htmlContent string, width int) (string, error) {
 	// Stage 4: HTML to Markdown

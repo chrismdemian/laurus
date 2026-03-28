@@ -105,6 +105,7 @@ func init() {
 	rootCmd.AddCommand(assignmentscmd.NewCmdNext(f))
 	rootCmd.AddCommand(filescmd.NewCmdFiles(f))
 	rootCmd.AddCommand(filescmd.NewCmdDownload(f))
+	rootCmd.AddCommand(filescmd.NewCmdDownloadAll(f))
 	rootCmd.AddCommand(gradescmd.NewCmdGrades(f))
 	rootCmd.AddCommand(gradescmd.NewCmdGrade(f))
 	rootCmd.AddCommand(inboxcmd.NewCmdInbox(f))

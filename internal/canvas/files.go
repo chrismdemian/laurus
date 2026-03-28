@@ -46,6 +46,14 @@ func ListFolders(ctx context.Context, c *Client, courseID int64) iter.Seq2[Folde
 	return Paginate[Folder](ctx, c, path, nil)
 }
 
+// GetFile retrieves a single file by its ID.
+// This works even when the course Files tab is restricted (403),
+// because individual file access through module items is permitted.
+func GetFile(ctx context.Context, c *Client, fileID int64) (File, error) {
+	path := fmt.Sprintf("/api/v1/files/%d", fileID)
+	return Get[File](ctx, c, path, nil)
+}
+
 // publicURLResponse wraps the Canvas response for file public URLs.
 type publicURLResponse struct {
 	PublicURL string `json:"public_url"`
