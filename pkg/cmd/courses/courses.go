@@ -62,7 +62,7 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 	ios := f.IOStreams()
 
 	listOpts := canvas.CourseListOptions{
-		Include:       []string{"enrollments"},
+		Include:       []string{"enrollments", "total_scores"},
 		FavoritesOnly: opts.Favorites,
 	}
 	if opts.All {
@@ -122,11 +122,13 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 
 func findStudentEnrollment(enrollments []canvas.Enrollment) *canvas.Enrollment {
 	for i := range enrollments {
-		if enrollments[i].Type == "StudentEnrollment" {
+		// Canvas returns "StudentEnrollment" from the enrollments endpoint
+		// but "student" from the courses endpoint with include[]=enrollments
+		t := enrollments[i].Type
+		if t == "StudentEnrollment" || t == "student" {
 			return &enrollments[i]
 		}
 	}
-	// Fall back to first enrollment if no StudentEnrollment found
 	if len(enrollments) > 0 {
 		return &enrollments[0]
 	}

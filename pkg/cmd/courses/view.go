@@ -29,7 +29,7 @@ func ViewCourse(f *cmdutil.Factory, query string, syllabus bool) error {
 
 	// Re-fetch with full includes
 	course, err = canvas.GetCourse(context.Background(), client, course.ID,
-		[]string{"syllabus_body", "teachers", "total_students", "enrollments"})
+		[]string{"syllabus_body", "teachers", "total_students", "enrollments", "total_scores"})
 	if err != nil {
 		return fmt.Errorf("fetching course details: %w", err)
 	}
@@ -82,20 +82,23 @@ func renderCourseDetail(f *cmdutil.Factory, course canvas.Course) error {
 	_ = ios.StartPager()
 	defer ios.StopPager()
 
-	// Course name and code
-	title := fmt.Sprintf("%s - %s", course.CourseCode, course.Name)
-	_, _ = fmt.Fprintln(ios.Out, palette.Header.Render(title))
-	_, _ = fmt.Fprintln(ios.Out)
-
-	// Details
+	// Course name
+	_, _ = fmt.Fprintln(ios.Out, palette.Header.Render(course.Name))
+	if course.CourseCode != "" {
+		printField(ios, palette, "Code", course.CourseCode)
+	}
 	printField(ios, palette, "Status", course.WorkflowState)
 
-	if len(course.Teachers) > 0 {
-		names := make([]string, len(course.Teachers))
-		for i, t := range course.Teachers {
-			names[i] = t.Name
+	// Filter out teachers with empty names (Canvas sometimes returns empty entries)
+	var teacherNames []string
+	for _, t := range course.Teachers {
+		name := strings.TrimSpace(t.Name)
+		if name != "" {
+			teacherNames = append(teacherNames, name)
 		}
-		printField(ios, palette, "Teachers", strings.Join(names, ", "))
+	}
+	if len(teacherNames) > 0 {
+		printField(ios, palette, "Teachers", strings.Join(teacherNames, ", "))
 	}
 
 	if course.TotalStudents != nil {
