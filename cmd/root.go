@@ -10,6 +10,7 @@ import (
 	"github.com/chrismdemian/laurus/internal/config"
 	"github.com/chrismdemian/laurus/internal/iostreams"
 	authcmd "github.com/chrismdemian/laurus/pkg/cmd/auth"
+	coursescmd "github.com/chrismdemian/laurus/pkg/cmd/courses"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
 
@@ -85,4 +86,6 @@ func init() {
 	}
 
 	rootCmd.AddCommand(authcmd.NewCmdAuth(f))
+	rootCmd.AddCommand(coursescmd.NewCmdCourses(f))
+	rootCmd.AddCommand(coursescmd.NewCmdCourse(f))
 }
