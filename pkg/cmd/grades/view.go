@@ -97,11 +97,26 @@ func viewRun(f *cmdutil.Factory, query string, opts viewOpts) error {
 
 	// Calculate grades (with or without what-if).
 	var result grade.CourseGrade
+	var baseline *grade.CourseGrade
 	if opts.WhatIf != "" {
 		whatIfs, err := parseWhatIf(opts.WhatIf, groups)
 		if err != nil {
 			return err
 		}
+		// Warn if any what-if IDs don't match real assignments.
+		allIDs := map[int64]bool{}
+		for _, g := range groups {
+			for _, a := range g.Assignments {
+				allIDs[a.ID] = true
+			}
+		}
+		for id := range whatIfs {
+			if !allIDs[id] {
+				_, _ = fmt.Fprintf(ios.ErrOut, "warning: assignment ID %d not found in this course\n", id)
+			}
+		}
+		base := grade.Calculate(gradeInputs, weighted, scheme)
+		baseline = &base
 		result = grade.CalculateWhatIf(gradeInputs, weighted, scheme, whatIfs)
 	} else {
 		result = grade.Calculate(gradeInputs, weighted, scheme)
@@ -111,10 +126,10 @@ func viewRun(f *cmdutil.Factory, query string, opts viewOpts) error {
 		return cmdutil.RenderJSON(ios, result)
 	}
 
-	return renderGradeDetail(ios, course, groups, result, opts)
+	return renderGradeDetail(ios, course, groups, result, baseline, opts)
 }
 
-func renderGradeDetail(ios *iostreams.IOStreams, course canvas.Course, apiGroups []canvas.AssignmentGroup, result grade.CourseGrade, opts viewOpts) error {
+func renderGradeDetail(ios *iostreams.IOStreams, course canvas.Course, apiGroups []canvas.AssignmentGroup, result grade.CourseGrade, baseline *grade.CourseGrade, opts viewOpts) error {
 	palette := cmdutil.NewPalette(ios)
 
 	_ = ios.StartPager()
@@ -131,8 +146,17 @@ func renderGradeDetail(ios *iostreams.IOStreams, course canvas.Course, apiGroups
 	if result.FinalGrade != nil {
 		finalStr += fmt.Sprintf(" (%s)", *result.FinalGrade)
 	}
-	printField(ios, palette, "Current", currentStr)
-	printField(ios, palette, "Final", finalStr)
+
+	// Show before → after for what-if mode.
+	if baseline != nil {
+		baseCurrentStr := baseline.CurrentScore.String() + "%"
+		baseFinalStr := baseline.FinalScore.String() + "%"
+		printField(ios, palette, "Current", baseCurrentStr+" -> "+currentStr)
+		printField(ios, palette, "Final", baseFinalStr+" -> "+finalStr)
+	} else {
+		printField(ios, palette, "Current", currentStr)
+		printField(ios, palette, "Final", finalStr)
+	}
 
 	// Per-group breakdown.
 	for _, gr := range result.Groups {
@@ -319,10 +343,16 @@ func decimalFromPtr(f *float64) decimal.Decimal {
 func parseWhatIf(input string, groups []canvas.AssignmentGroup) (map[int64]decimal.Decimal, error) {
 	whatIfs := make(map[int64]decimal.Decimal)
 
-	// Simple case: just a number → apply to first ungraded assignment.
+	// Simple case: just a number → apply to first ungraded assignment with points.
 	if score, err := decimal.NewFromString(input); err == nil && !strings.Contains(input, ":") {
 		for _, g := range groups {
 			for _, a := range g.Assignments {
+				if !a.Published {
+					continue
+				}
+				if a.PointsPossible == nil || *a.PointsPossible == 0 {
+					continue
+				}
 				if a.Submission == nil || a.Submission.Score == nil {
 					whatIfs[a.ID] = score
 					return whatIfs, nil
