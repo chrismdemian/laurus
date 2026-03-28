@@ -12,7 +12,7 @@ run:
 	go run $(LDFLAGS) . $(ARGS)
 
 test:
-	go test ./... -v
+	go test ./... -v -race
 
 lint:
 	golangci-lint run
