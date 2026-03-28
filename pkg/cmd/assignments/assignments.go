@@ -75,6 +75,9 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 			if err != nil {
 				return fmt.Errorf("listing missing submissions: %w", err)
 			}
+			// The missing_submissions endpoint returns bare assignments without
+			// embedded submission data, so explicitly mark them as missing.
+			a.Missing = true
 			items = append(items, assignmentWithCourse{
 				Assignment: a,
 				CourseName: courseNames[a.CourseID],
