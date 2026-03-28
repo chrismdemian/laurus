@@ -86,7 +86,7 @@ func nextFromUpcomingEvents(ctx context.Context, client *canvas.Client, now time
 	var bestCourseID int64
 	for i := range events {
 		ev := &events[i]
-		if ev.Type != "assignment" || ev.Assignment == nil {
+		if ev.Assignment == nil {
 			continue
 		}
 		a := ev.Assignment

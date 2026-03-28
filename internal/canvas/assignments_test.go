@@ -186,9 +186,10 @@ func TestListUpcomingEvents(t *testing.T) {
 		if r.URL.Path != "/api/v1/users/self/upcoming_events" {
 			t.Errorf("path = %q, want /api/v1/users/self/upcoming_events", r.URL.Path)
 		}
+		// Canvas returns string IDs like "assignment_500" on this endpoint
 		_, _ = fmt.Fprint(w, `[
-			{"id": 1, "title": "Lecture", "type": "event"},
-			{"id": 2, "title": "BST Due", "type": "assignment", "assignment": {"id": 500, "name": "BST"}}
+			{"id": "event_1", "title": "Lecture", "type": "event"},
+			{"id": "assignment_500", "title": "BST Due", "type": "assignment", "assignment": {"id": 500, "name": "BST"}}
 		]`)
 	})
 
@@ -389,9 +390,8 @@ func TestAssignment_Unmarshal_NullSubmission(t *testing.T) {
 	}
 }
 
-func TestCalendarEvent_Unmarshal_WithAssignment(t *testing.T) {
+func TestUpcomingEvent_Unmarshal(t *testing.T) {
 	raw := `{
-		"id": 1,
 		"title": "BST Due",
 		"type": "assignment",
 		"start_at": "2025-10-15T03:59:00Z",
@@ -402,12 +402,30 @@ func TestCalendarEvent_Unmarshal_WithAssignment(t *testing.T) {
 		}
 	}`
 
-	var ev CalendarEvent
+	var ev UpcomingEvent
 	if err := json.Unmarshal([]byte(raw), &ev); err != nil {
 		t.Fatalf("Unmarshal error: %v", err)
 	}
 	if ev.Type != "assignment" {
 		t.Errorf("Type = %q, want assignment", ev.Type)
+	}
+	if ev.Assignment == nil || ev.Assignment.ID != 500 {
+		t.Errorf("Assignment = %v, want {ID:500}", ev.Assignment)
+	}
+}
+
+func TestUpcomingEvent_Unmarshal_StringID(t *testing.T) {
+	// Canvas returns string IDs like "assignment_500" on upcoming_events
+	raw := `{
+		"id": "assignment_500",
+		"title": "BST Due",
+		"type": "assignment",
+		"assignment": {"id": 500, "name": "BST"}
+	}`
+
+	var ev UpcomingEvent
+	if err := json.Unmarshal([]byte(raw), &ev); err != nil {
+		t.Fatalf("Unmarshal error: %v (should handle string IDs)", err)
 	}
 	if ev.Assignment == nil || ev.Assignment.ID != 500 {
 		t.Errorf("Assignment = %v, want {ID:500}", ev.Assignment)

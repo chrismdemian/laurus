@@ -246,9 +246,15 @@ func assignmentStatus(a canvas.Assignment, now time.Time, palette *cmdutil.Palet
 	return "Upcoming", palette.Neutral
 }
 
-// isSubmitted returns true if the assignment has been submitted.
+// isSubmitted returns true if the assignment has been submitted or graded.
+// Canvas quizzes taken in-browser may not set SubmittedAt, so we also
+// check for a grade or a "graded" workflow state.
 func isSubmitted(a canvas.Assignment) bool {
-	return a.Submission != nil && a.Submission.SubmittedAt != nil
+	if a.Submission == nil {
+		return false
+	}
+	s := a.Submission
+	return s.SubmittedAt != nil || s.Grade != nil || s.WorkflowState == "graded"
 }
 
 // buildCourseMap creates a lookup from courseID to course code.

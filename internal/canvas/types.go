@@ -290,19 +290,29 @@ type ConversationMessage struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// CalendarEvent represents a Canvas calendar event.
+// CalendarEvent represents a Canvas calendar event from /calendar_events.
 type CalendarEvent struct {
-	ID            int64       `json:"id"`
-	Title         string      `json:"title"`
-	StartAt       *time.Time  `json:"start_at"`
-	EndAt         *time.Time  `json:"end_at"`
-	Description   *string     `json:"description"`
-	ContextCode   string      `json:"context_code"`
-	WorkflowState string      `json:"workflow_state"`
-	AllDay        bool        `json:"all_day"`
-	HTMLURL       string      `json:"html_url"`
-	Assignment    *Assignment `json:"assignment"` // present for assignment-type upcoming events
-	Type          string      `json:"type"`       // "event" or "assignment"
+	ID            int64      `json:"id"`
+	Title         string     `json:"title"`
+	StartAt       *time.Time `json:"start_at"`
+	EndAt         *time.Time `json:"end_at"`
+	Description   *string    `json:"description"`
+	ContextCode   string     `json:"context_code"`
+	WorkflowState string     `json:"workflow_state"`
+	AllDay        bool       `json:"all_day"`
+	HTMLURL       string     `json:"html_url"`
+}
+
+// UpcomingEvent represents an item from /users/self/upcoming_events.
+// Canvas returns mixed types here: assignment events have string IDs
+// like "assignment_500", so ID is omitted to avoid unmarshal errors.
+type UpcomingEvent struct {
+	Title      string      `json:"title"`
+	Type       string      `json:"type"` // "event" or "assignment"
+	StartAt    *time.Time  `json:"start_at"`
+	EndAt      *time.Time  `json:"end_at"`
+	HTMLURL    string      `json:"html_url"`
+	Assignment *Assignment `json:"assignment"` // present for assignment-type events
 }
 
 // PlannerItem represents an item on the Canvas planner.

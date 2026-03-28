@@ -103,9 +103,10 @@ func GetSubmission(ctx context.Context, c *Client, courseID, assignmentID int64,
 }
 
 // ListUpcomingEvents returns upcoming events and assignments for the current user.
-// This endpoint is NOT paginated.
-func ListUpcomingEvents(ctx context.Context, c *Client) ([]CalendarEvent, error) {
-	return Get[[]CalendarEvent](ctx, c, "/api/v1/users/self/upcoming_events", nil)
+// This endpoint is NOT paginated. Returns UpcomingEvent (not CalendarEvent) because
+// Canvas uses string IDs like "assignment_500" on this endpoint.
+func ListUpcomingEvents(ctx context.Context, c *Client) ([]UpcomingEvent, error) {
+	return Get[[]UpcomingEvent](ctx, c, "/api/v1/users/self/upcoming_events", nil)
 }
 
 // ListMissingSubmissions returns an iterator over assignments with missing submissions.
