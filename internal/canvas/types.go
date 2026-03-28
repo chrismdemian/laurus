@@ -244,14 +244,14 @@ type Folder struct {
 
 // Announcement represents a Canvas announcement (a special discussion topic).
 type Announcement struct {
-	ID          int64     `json:"id"`
-	Title       string    `json:"title"`
-	Message     string    `json:"message"`
-	PostedAt    time.Time `json:"posted_at"`
-	Author      User      `json:"author"`
-	ContextCode string    `json:"context_code"`
-	ReadState   string    `json:"read_state"`
-	HTMLURL     string    `json:"html_url"`
+	ID          int64      `json:"id"`
+	Title       string     `json:"title"`
+	Message     string     `json:"message"`
+	PostedAt    *time.Time `json:"posted_at"`
+	Author      User       `json:"author"`
+	ContextCode string     `json:"context_code"`
+	ReadState   string     `json:"read_state"`
+	HTMLURL     string     `json:"html_url"`
 }
 
 // DiscussionTopic represents a Canvas discussion topic.

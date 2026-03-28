@@ -141,10 +141,11 @@ func formatParticipants(participants []canvas.ConversationParticipant) string {
 func truncate(s string, max int) string {
 	// Normalize whitespace (Canvas last_message can have newlines)
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= max {
+	runes := []rune(s)
+	if len(runes) <= max {
 		return s
 	}
-	return s[:max-3] + "..."
+	return string(runes[:max-3]) + "..."
 }
 
 func newCmdInboxRead(f *cmdutil.Factory) *cobra.Command {
@@ -253,7 +254,7 @@ func unreadCountRun(f *cmdutil.Factory) error {
 
 	count, err := canvas.GetUnreadCount(ctx, client)
 	if err != nil {
-		return err
+		return fmt.Errorf("fetching unread count: %w", err)
 	}
 
 	if ios.IsJSON {

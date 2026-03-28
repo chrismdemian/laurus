@@ -200,7 +200,7 @@ func viewRun(f *cmdutil.Factory, courseQuery, topicQuery string) error {
 
 	if ios.IsJSON {
 		data := struct {
-			Topic canvas.DiscussionTopic    `json:"topic"`
+			Topic canvas.DiscussionTopic     `json:"topic"`
 			View  canvas.DiscussionTopicView `json:"view"`
 		}{
 			Topic: topic,
@@ -288,13 +288,17 @@ func renderEntry(ios *iostreams.IOStreams, palette *cmdutil.Palette, participant
 		dateStyle.Render(entry.CreatedAt.Format("Jan 2, 3:04 PM")),
 	)
 
-	// Render message HTML
-	if strings.TrimSpace(entry.Message) != "" {
+	// Render message HTML (Canvas uses "<deleted>" for removed entries)
+	msg := strings.TrimSpace(entry.Message)
+	if msg == "" || msg == "<deleted>" {
+		if msg == "<deleted>" {
+			_, _ = fmt.Fprintf(ios.Out, "%s%s\n", prefix, palette.Muted.Render("[deleted]"))
+		}
+	} else {
 		rendered, err := render.CanvasHTML(entry.Message, ios.TerminalWidth()-len(prefix)-4)
 		if err != nil {
 			_, _ = fmt.Fprintf(ios.Out, "%s%s\n", prefix, entry.Message)
 		} else {
-			// Indent each line of rendered output
 			for _, line := range strings.Split(rendered, "\n") {
 				if line != "" {
 					_, _ = fmt.Fprintf(ios.Out, "%s%s\n", prefix, line)

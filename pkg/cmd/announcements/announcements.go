@@ -109,9 +109,19 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 		items = append(items, a)
 	}
 
-	// Sort newest first
+	// Sort newest first (nil PostedAt sorts to end)
 	sort.Slice(items, func(i, j int) bool {
-		return items[i].PostedAt.After(items[j].PostedAt)
+		pi, pj := items[i].PostedAt, items[j].PostedAt
+		if pi == nil && pj == nil {
+			return items[i].Title < items[j].Title
+		}
+		if pi == nil {
+			return false
+		}
+		if pj == nil {
+			return true
+		}
+		return pi.After(*pj)
 	})
 
 	if ios.IsJSON {
@@ -143,7 +153,7 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 		tbl.AddStyledRow(
 			cmdutil.StyledCell{Value: courseName, Style: style},
 			cmdutil.StyledCell{Value: a.Title, Style: style},
-			cmdutil.StyledCell{Value: cmdutil.RelativeTime(a.PostedAt), Style: style},
+			cmdutil.StyledCell{Value: formatPostedAt(a.PostedAt), Style: style},
 			cmdutil.StyledCell{Value: status, Style: style},
 		)
 	}
@@ -233,7 +243,7 @@ func findAnnouncement(items []canvas.Announcement, query string) (canvas.Announc
 		}
 	}
 
-	return canvas.Announcement{}, fmt.Errorf("no announcement matching %q", query)
+	return canvas.Announcement{}, fmt.Errorf("no announcement matching %q: %w", query, canvas.ErrNotFound)
 }
 
 func renderAnnouncementDetail(ios *iostreams.IOStreams, course canvas.Course, a canvas.Announcement) error {
@@ -246,7 +256,7 @@ func renderAnnouncementDetail(ios *iostreams.IOStreams, course canvas.Course, a 
 
 	printField(ios, palette, "Course", course.CourseCode)
 	printField(ios, palette, "Author", a.Author.Name)
-	printField(ios, palette, "Date", cmdutil.RelativeTime(a.PostedAt))
+	printField(ios, palette, "Date", formatPostedAt(a.PostedAt))
 	if a.HTMLURL != "" {
 		printField(ios, palette, "URL", a.HTMLURL)
 	}
@@ -269,6 +279,13 @@ func printField(ios *iostreams.IOStreams, palette *cmdutil.Palette, label, value
 		palette.Muted.Render(fmt.Sprintf("%-14s", label)),
 		value,
 	)
+}
+
+func formatPostedAt(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return cmdutil.RelativeTime(*t)
 }
 
 // parseSinceDuration parses a human-friendly duration: 3d, 1w, 24h.
