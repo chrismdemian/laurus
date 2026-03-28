@@ -251,6 +251,7 @@ type Announcement struct {
 	Author      User      `json:"author"`
 	ContextCode string    `json:"context_code"`
 	ReadState   string    `json:"read_state"`
+	HTMLURL     string    `json:"html_url"`
 }
 
 // DiscussionTopic represents a Canvas discussion topic.
@@ -266,6 +267,8 @@ type DiscussionTopic struct {
 	UnreadCount             int        `json:"unread_count"`
 	Pinned                  bool       `json:"pinned"`
 	Published               bool       `json:"published"`
+	HTMLURL                 string     `json:"html_url"`
+	Locked                  bool       `json:"locked"`
 }
 
 // DiscussionEntry represents a reply in a discussion topic.
@@ -278,6 +281,19 @@ type DiscussionEntry struct {
 	Replies   []DiscussionEntry `json:"replies"`
 }
 
+// DiscussionTopicView is the envelope returned by GET /courses/:id/discussion_topics/:id/view.
+type DiscussionTopicView struct {
+	Participants  []DiscussionParticipant `json:"participants"`
+	UnreadEntries []int64                 `json:"unread_entries"`
+	View          []DiscussionEntry       `json:"view"`
+}
+
+// DiscussionParticipant identifies a user in a discussion view.
+type DiscussionParticipant struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+}
+
 // Conversation represents a Canvas inbox conversation.
 type Conversation struct {
 	ID            int64                     `json:"id"`
@@ -288,6 +304,7 @@ type Conversation struct {
 	MessageCount  int                       `json:"message_count"`
 	Participants  []ConversationParticipant `json:"participants"`
 	Starred       bool                      `json:"starred"`
+	Messages      []ConversationMessage     `json:"messages,omitempty"`
 }
 
 // ConversationParticipant is a user in a conversation.
