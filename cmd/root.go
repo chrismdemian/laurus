@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/chrismdemian/laurus/internal/auth"
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
 	"github.com/chrismdemian/laurus/internal/config"
 	"github.com/chrismdemian/laurus/internal/iostreams"
@@ -19,6 +21,7 @@ import (
 	inboxcmd "github.com/chrismdemian/laurus/pkg/cmd/inbox"
 	modulescmd "github.com/chrismdemian/laurus/pkg/cmd/modules"
 	pagescmd "github.com/chrismdemian/laurus/pkg/cmd/pages"
+	synccmd "github.com/chrismdemian/laurus/pkg/cmd/sync"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
 
@@ -41,10 +44,40 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
+// cacheDB is the singleton cache database, closed in OnFinalize.
+var cacheDB *cache.DB
+
 func init() {
 	rootCmd.PersistentFlags().Bool("json", false, "Output as JSON")
 	rootCmd.PersistentFlags().Bool("cached", false, "Read from local cache (offline mode)")
 	rootCmd.PersistentFlags().Bool("no-color", false, "Disable color output")
+	rootCmd.PersistentFlags().Bool("reset-cache", false, "Clear the local cache before running")
+
+	cobra.OnFinalize(func() {
+		if cacheDB != nil {
+			_ = cacheDB.Close()
+		}
+	})
+
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if reset, _ := cmd.Flags().GetBool("reset-cache"); reset {
+			dir, err := config.Dir()
+			if err != nil {
+				return err
+			}
+			db, err := cache.Open(filepath.Join(dir, "cache.db"))
+			if err != nil {
+				return fmt.Errorf("opening cache: %w", err)
+			}
+			if err := db.Reset(); err != nil {
+				_ = db.Close()
+				return fmt.Errorf("resetting cache: %w", err)
+			}
+			cacheDB = db
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Cache cleared.")
+		}
+		return nil
+	}
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "version",
@@ -93,6 +126,22 @@ func init() {
 		return canvas.NewClient(cfg.CanvasURL, td.Token, f.Version), nil
 	}
 
+	f.Cache = func() (*cache.DB, error) {
+		if cacheDB != nil {
+			return cacheDB, nil
+		}
+		dir, err := config.Dir()
+		if err != nil {
+			return nil, err
+		}
+		db, err := cache.Open(filepath.Join(dir, "cache.db"))
+		if err != nil {
+			return nil, fmt.Errorf("opening cache: %w", err)
+		}
+		cacheDB = db
+		return db, nil
+	}
+
 	rootCmd.AddCommand(announcementscmd.NewCmdAnnouncements(f))
 	rootCmd.AddCommand(announcementscmd.NewCmdAnnouncement(f))
 	rootCmd.AddCommand(authcmd.NewCmdAuth(f))
@@ -113,4 +162,5 @@ func init() {
 	rootCmd.AddCommand(modulescmd.NewCmdMarkDone(f))
 	rootCmd.AddCommand(pagescmd.NewCmdPages(f))
 	rootCmd.AddCommand(pagescmd.NewCmdPage(f))
+	rootCmd.AddCommand(synccmd.NewCmdSync(f))
 }

@@ -114,7 +114,7 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 	if db, err := f.Cache(); err == nil {
 		cacheItems := make([]cache.CacheItem, len(items))
 		for i, x := range items {
-			cacheItems[i] = cache.CacheItem{ID: x.ID, CourseID: 0, Data: x}
+			cacheItems[i] = cache.CacheItem{ID: x.ID, CourseID: parseCourseID(x.ContextCode), Data: x}
 		}
 		_ = db.UpsertMany(cache.ResourceAnnouncements, cacheItems)
 		_ = db.SetSyncMeta(cache.ResourceAnnouncements, 0, len(cacheItems), "success")
@@ -325,4 +325,14 @@ func parseSinceDuration(s string) (time.Duration, error) {
 	default:
 		return 0, fmt.Errorf("unknown suffix %q (use h, d, or w)", string(suffix))
 	}
+}
+
+// parseCourseID extracts the numeric course ID from a context code like "course_123".
+func parseCourseID(contextCode string) int64 {
+	parts := strings.SplitN(contextCode, "_", 2)
+	if len(parts) == 2 {
+		id, _ := strconv.ParseInt(parts[1], 10, 64)
+		return id
+	}
+	return 0
 }

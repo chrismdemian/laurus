@@ -7,7 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
+	"github.com/chrismdemian/laurus/internal/iostreams"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
 
@@ -20,7 +22,7 @@ func NewCmdCourses(f *cmdutil.Factory) *cobra.Command {
 		Short: "List your Canvas courses",
 		Long:  "Display enrolled courses with grades and status.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return listRun(f, opts)
+			return listRun(cmd, f, opts)
 		},
 	}
 
@@ -54,12 +56,31 @@ type listOpts struct {
 	Favorites bool
 }
 
-func listRun(f *cmdutil.Factory, opts listOpts) error {
+func listRun(cmd *cobra.Command, f *cmdutil.Factory, opts listOpts) error {
+	ios := f.IOStreams()
+
+	// Serve from cache if --cached flag is set.
+	if cmdutil.IsCached(cmd) {
+		db, err := f.Cache()
+		if err != nil {
+			return fmt.Errorf("cache unavailable: %w", err)
+		}
+		var courses []canvas.Course
+		if err := db.List(cache.ResourceCourses, 0, &courses); err != nil {
+			return fmt.Errorf("no cached courses (run 'laurus sync' first): %w", err)
+		}
+		if len(courses) == 0 {
+			_, _ = fmt.Fprintln(ios.Out, "No cached courses. Run 'laurus sync' to populate.")
+			return nil
+		}
+		cmdutil.PrintCacheFreshness(ios.ErrOut, db, cache.ResourceCourses, 0)
+		return renderCourseList(ios, courses)
+	}
+
 	client, err := f.Client()
 	if err != nil {
 		return err
 	}
-	ios := f.IOStreams()
 
 	listOpts := canvas.CourseListOptions{
 		Include:       []string{"enrollments", "total_scores"},
@@ -79,6 +100,16 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 		courses = append(courses, c)
 	}
 
+	// Opportunistic cache write.
+	if db, err := f.Cache(); err == nil {
+		items := make([]cache.CacheItem, len(courses))
+		for i, c := range courses {
+			items[i] = cache.CacheItem{ID: c.ID, CourseID: 0, Data: c}
+		}
+		_ = db.UpsertMany(cache.ResourceCourses, items)
+		_ = db.SetSyncMeta(cache.ResourceCourses, 0, len(courses), "success")
+	}
+
 	if ios.IsJSON {
 		return cmdutil.RenderJSON(ios, courses)
 	}
@@ -88,6 +119,10 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 		return nil
 	}
 
+	return renderCourseList(ios, courses)
+}
+
+func renderCourseList(ios *iostreams.IOStreams, courses []canvas.Course) error {
 	palette := cmdutil.NewPalette(ios)
 	tbl := cmdutil.NewTable(ios)
 	tbl.AddHeader("COURSE", "CODE", "GRADE", "STATUS")
