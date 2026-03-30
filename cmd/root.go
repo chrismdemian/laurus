@@ -23,6 +23,7 @@ import (
 	pagescmd "github.com/chrismdemian/laurus/pkg/cmd/pages"
 	submitcmd "github.com/chrismdemian/laurus/pkg/cmd/submit"
 	synccmd "github.com/chrismdemian/laurus/pkg/cmd/sync"
+	todocmd "github.com/chrismdemian/laurus/pkg/cmd/todo"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
 
@@ -166,4 +167,5 @@ func init() {
 	rootCmd.AddCommand(pagescmd.NewCmdPage(f))
 	rootCmd.AddCommand(submitcmd.NewCmdSubmit(f))
 	rootCmd.AddCommand(synccmd.NewCmdSync(f))
+	rootCmd.AddCommand(todocmd.NewCmdTodo(f))
 }
