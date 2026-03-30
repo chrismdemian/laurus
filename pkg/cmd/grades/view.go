@@ -65,17 +65,25 @@ func viewRun(f *cmdutil.Factory, query string, opts viewOpts) error {
 	}
 
 	// Fetch assignment groups with assignments and submissions in one call.
-	include := []string{"assignments", "submission"}
-	if opts.Statistics {
-		include = append(include, "score_statistics")
-	}
-
 	var groups []canvas.AssignmentGroup
-	for g, err := range canvas.ListAssignmentGroups(ctx, client, course.ID, include) {
-		if err != nil {
-			return fmt.Errorf("fetching assignment groups: %w", err)
+	if !opts.Detailed && !opts.Statistics {
+		groups, err = canvas.QueryCourseGradesGraphQL(ctx, client, course.ID)
+		if err != nil && !canvas.IsGraphQLFallback(err) {
+			return fmt.Errorf("fetching course grades via graphql: %w", err)
 		}
-		groups = append(groups, g)
+	}
+	if len(groups) == 0 {
+		include := []string{"assignments", "submission"}
+		if opts.Statistics {
+			include = append(include, "score_statistics")
+		}
+
+		for g, err := range canvas.ListAssignmentGroups(ctx, client, course.ID, include) {
+			if err != nil {
+				return fmt.Errorf("fetching assignment groups: %w", err)
+			}
+			groups = append(groups, g)
+		}
 	}
 
 	// Fetch grading standard if the course has one.

@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"sync/atomic"
 	"testing"
+
+	gql "github.com/hasura/go-graphql-client"
 )
 
 // newTestClient creates a Client pointing at a test server.
@@ -18,6 +20,14 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*Client, *httptest.S
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	client := NewClient(server.URL, "test-token", "test")
+	if client.gqlClient == nil {
+		client.gqlEnabled = true
+		client.gqlClient = gql.NewClient(server.URL+"/api/graphql", client.httpClient).
+			WithRequestModifier(func(r *http.Request) {
+				r.Header.Set("Authorization", "Bearer test-token")
+				r.Header.Set("User-Agent", "Laurus/test")
+			})
+	}
 	return client, server
 }
 

@@ -6,20 +6,30 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/hashicorp/go-retryablehttp"
+	gql "github.com/hasura/go-graphql-client"
 	"golang.org/x/time/rate"
 )
 
 // Client is a Canvas LMS API client with built-in rate limiting, retry, and auth.
 type Client struct {
 	baseURL    string
+	token      string
+	version    string
 	httpClient *http.Client
+	gqlClient  *gql.Client
+	gqlEnabled bool
 	limiter    *rate.Limiter
 	mu         *sync.Mutex
+
+	userMu            *sync.Mutex
+	currentUserID     int64
+	currentUserIDInit bool
 }
 
 // NewClient creates a Canvas API client with the full transport stack:
@@ -58,12 +68,41 @@ func NewClient(baseURL, token, version string) *Client {
 	}
 	retryClient.HTTPClient = &http.Client{Transport: rl}
 
+	httpClient := retryClient.StandardClient()
+	gqlEnabled := isGraphQLEnabledEnv()
+
+	var gqlClient *gql.Client
+	if gqlEnabled {
+		gqlClient = gql.NewClient(baseURL+"/api/graphql", httpClient).
+			WithRequestModifier(func(r *http.Request) {
+				r.Header.Set("Authorization", "Bearer "+token)
+				r.Header.Set("User-Agent", "Laurus/"+version)
+			})
+	}
+
 	return &Client{
 		baseURL:    baseURL,
-		httpClient: retryClient.StandardClient(),
+		token:      token,
+		version:    version,
+		httpClient: httpClient,
+		gqlClient:  gqlClient,
+		gqlEnabled: gqlEnabled,
 		limiter:    limiter,
 		mu:         mu,
+		userMu:     &sync.Mutex{},
 	}
+}
+
+func isGraphQLEnabledEnv() bool {
+	if envTruthy("LAURUS_DISABLE_GRAPHQL") {
+		return false
+	}
+	return envTruthy("LAURUS_ENABLE_GRAPHQL")
+}
+
+func envTruthy(key string) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	return v == "1" || v == "true" || v == "yes"
 }
 
 // do performs an HTTP request and returns the response body.
@@ -92,6 +131,30 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader) (*
 	}
 
 	return resp, nil
+}
+
+// currentUserIDValue returns the authenticated user's numeric Canvas ID,
+// caching the first successful lookup for later GraphQL filters.
+func (c *Client) currentUserIDValue(ctx context.Context) (int64, error) {
+	c.userMu.Lock()
+	if c.currentUserIDInit {
+		id := c.currentUserID
+		c.userMu.Unlock()
+		return id, nil
+	}
+	c.userMu.Unlock()
+
+	user, err := GetUserProfile(ctx, c)
+	if err != nil {
+		return 0, fmt.Errorf("fetching current user profile: %w", err)
+	}
+
+	c.userMu.Lock()
+	c.currentUserID = user.ID
+	c.currentUserIDInit = true
+	c.userMu.Unlock()
+
+	return user.ID, nil
 }
 
 // doRaw performs an HTTP request and returns the raw response.
