@@ -36,6 +36,8 @@ func NewCmdInbox(f *cmdutil.Factory) *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("unread", "starred", "sent")
 
 	cmd.AddCommand(newCmdInboxRead(f))
+	cmd.AddCommand(newCmdInboxReply(f))
+	cmd.AddCommand(newCmdInboxSend(f))
 	cmd.AddCommand(newCmdInboxUnreadCount(f))
 
 	return cmd
