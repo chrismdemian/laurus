@@ -122,12 +122,15 @@ func TestUploadFileBytes_S3Redirect(t *testing.T) {
 		FileParam:    "file",
 	}
 
-	location, err := UploadFileBytes(context.Background(), preflight, strings.NewReader("print('hello')"), "solution.py")
+	result, err := UploadFileBytes(context.Background(), preflight, strings.NewReader("print('hello')"), "solution.py")
 	if err != nil {
 		t.Fatalf("UploadFileBytes error: %v", err)
 	}
-	if location != "https://canvas.example.com/api/v1/files/999/create_success?uuid=XYZ" {
-		t.Errorf("location = %q", location)
+	if result.Location != "https://canvas.example.com/api/v1/files/999/create_success?uuid=XYZ" {
+		t.Errorf("location = %q", result.Location)
+	}
+	if result.InlineFile != nil {
+		t.Error("expected no inline file for S3 redirect")
 	}
 }
 
@@ -232,6 +235,64 @@ func TestUploadFile_EmptyFile(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "empty (0 bytes)") {
 		t.Errorf("error = %q, want 'empty (0 bytes)'", err.Error())
+	}
+}
+
+func TestUploadFileBytes_InlineConfirm(t *testing.T) {
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Backend confirms inline with a 201 and file JSON body (no Location header)
+		file := File{ID: 777, DisplayName: "essay.pdf", Size: 2048}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(file)
+	}))
+	defer uploadServer.Close()
+
+	preflight := FileUploadPreflight{
+		UploadURL:    uploadServer.URL,
+		UploadParams: map[string]string{"token": "xyz"},
+		FileParam:    "file",
+	}
+
+	result, err := UploadFileBytes(context.Background(), preflight, strings.NewReader("essay content"), "essay.pdf")
+	if err != nil {
+		t.Fatalf("UploadFileBytes error: %v", err)
+	}
+	if result.InlineFile == nil {
+		t.Fatal("expected inline file, got nil")
+	}
+	if result.InlineFile.ID != 777 {
+		t.Errorf("file.ID = %d, want 777", result.InlineFile.ID)
+	}
+	if result.Location != "" {
+		t.Errorf("expected empty location for inline confirm, got %q", result.Location)
+	}
+}
+
+func TestValidateConfirmURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		locURL  string
+		wantErr bool
+	}{
+		{"same host", "https://q.utoronto.ca", "https://q.utoronto.ca/api/v1/files/999/create_success", false},
+		{"different host", "https://q.utoronto.ca", "https://evil.com/steal-token", true},
+		{"case insensitive", "https://Q.UTORONTO.CA", "https://q.utoronto.ca/api/v1/files/1", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateConfirmURL(tt.baseURL, tt.locURL)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateConfirmURL(%q, %q) error = %v, wantErr = %v", tt.baseURL, tt.locURL, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDetectContentType_CaseInsensitive(t *testing.T) {
+	if got := detectContentType("REPORT.PDF"); got != "application/pdf" {
+		t.Errorf("detectContentType(REPORT.PDF) = %q, want application/pdf", got)
 	}
 }
 

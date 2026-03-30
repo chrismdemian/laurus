@@ -71,24 +71,10 @@ func SearchRecipients(ctx context.Context, c *Client, search string, contextCode
 	return Get[[]Recipient](ctx, c, "/api/v1/search/recipients", params)
 }
 
-// conversationCreateRequest wraps the fields Canvas expects for POST /conversations.
-// Canvas expects form-style parameters, but also accepts JSON with these field names.
-type conversationCreateRequest struct {
-	Recipients  []string `json:"recipients"`
-	Subject     string   `json:"subject"`
-	Body        string   `json:"body"`
-	ContextCode string   `json:"context_code,omitempty"`
-}
-
 // CreateConversation sends a new inbox message.
 // Canvas returns an array of conversations (one per recipient group).
 func CreateConversation(ctx context.Context, c *Client, req CreateConversationRequest) ([]Conversation, error) {
-	return Post[[]Conversation](ctx, c, "/api/v1/conversations", conversationCreateRequest{
-		Recipients:  req.Recipients,
-		Subject:     req.Subject,
-		Body:        req.Body,
-		ContextCode: req.ContextCode,
-	})
+	return Post[[]Conversation](ctx, c, "/api/v1/conversations", req)
 }
 
 // addMessageRequest is the JSON body for adding a message to an existing conversation.

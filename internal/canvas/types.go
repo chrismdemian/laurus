@@ -296,6 +296,7 @@ type DiscussionTopic struct {
 	Published               bool       `json:"published"`
 	HTMLURL                 string     `json:"html_url"`
 	Locked                  bool       `json:"locked"`
+	RequireInitialPost      bool       `json:"require_initial_post"`
 }
 
 // DiscussionEntry represents a reply in a discussion topic.
@@ -431,10 +432,10 @@ type Recipient struct {
 
 // CreateConversationRequest contains the parameters for creating a new conversation.
 type CreateConversationRequest struct {
-	Recipients  []string `json:"recipients"`             // user IDs as strings
+	Recipients  []string `json:"recipients"`
 	Subject     string   `json:"subject"`
 	Body        string   `json:"body"`
-	ContextCode string   `json:"context_code,omitempty"` // e.g. "course_123"
+	ContextCode string   `json:"context_code,omitempty"`
 }
 
 // CreatePlannerNoteRequest contains the parameters for creating a planner note.

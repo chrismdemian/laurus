@@ -45,6 +45,11 @@ func replyRun(f *cmdutil.Factory, courseQuery, topicQuery, message string) error
 	if topic.Locked {
 		return fmt.Errorf("topic %q is locked and does not accept replies", topic.Title)
 	}
+	if topic.RequireInitialPost {
+		// Canvas returns a 403 with plain text "require_initial_post" if the student
+		// hasn't posted yet. We can't check that client-side, but warn the user.
+		_, _ = fmt.Fprintf(ios.Out, "Note: this topic requires an initial post before viewing replies.\n")
+	}
 
 	_, err = canvas.CreateDiscussionEntry(ctx, client, course.ID, topic.ID, message)
 	if err != nil {

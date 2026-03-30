@@ -8,8 +8,10 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // preflightRequest is the JSON body sent to Canvas's upload preflight endpoint.
@@ -17,6 +19,13 @@ type preflightRequest struct {
 	Name        string `json:"name"`
 	Size        int64  `json:"size"`
 	ContentType string `json:"content_type"`
+}
+
+// uploadResult is returned by UploadFileBytes. Either Location is set (needs confirmation)
+// or InlineFile is set (upload was confirmed inline by the backend).
+type uploadResult struct {
+	Location   string // confirmation URL (step 3 needed)
+	InlineFile *File  // file confirmed inline (no step 3 needed)
 }
 
 // PreflightUpload initiates the first step of Canvas's 3-step upload flow.
@@ -35,16 +44,17 @@ func PreflightUpload(ctx context.Context, c *Client, path string, name string, s
 // UploadFileBytes performs step 2 of Canvas's upload flow: POST multipart/form-data
 // to the upload URL returned by preflight.
 //
-// Returns the Location URL to confirm the upload (step 3).
+// Returns an uploadResult: either a Location URL for step 3 confirmation,
+// or an inline-confirmed File when the backend confirms directly (InstFS 201).
 // Uses a plain HTTP client (no auth headers) because S3/InstFS rejects Canvas tokens.
-func UploadFileBytes(ctx context.Context, preflight FileUploadPreflight, r io.Reader, filename string) (string, error) {
+func UploadFileBytes(ctx context.Context, preflight FileUploadPreflight, r io.Reader, filename string) (uploadResult, error) {
 	// Build multipart body: echo upload_params first, file field last (S3 requirement)
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
 	for key, val := range preflight.UploadParams {
 		if err := writer.WriteField(key, val); err != nil {
-			return "", fmt.Errorf("writing upload param %q: %w", key, err)
+			return uploadResult{}, fmt.Errorf("writing upload param %q: %w", key, err)
 		}
 	}
 
@@ -55,18 +65,18 @@ func UploadFileBytes(ctx context.Context, preflight FileUploadPreflight, r io.Re
 
 	part, err := writer.CreateFormFile(fileParam, filename)
 	if err != nil {
-		return "", fmt.Errorf("creating file field: %w", err)
+		return uploadResult{}, fmt.Errorf("creating file field: %w", err)
 	}
 	if _, err := io.Copy(part, r); err != nil {
-		return "", fmt.Errorf("writing file data: %w", err)
+		return uploadResult{}, fmt.Errorf("writing file data: %w", err)
 	}
 	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("closing multipart writer: %w", err)
+		return uploadResult{}, fmt.Errorf("closing multipart writer: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", preflight.UploadURL, &buf)
 	if err != nil {
-		return "", fmt.Errorf("creating upload request: %w", err)
+		return uploadResult{}, fmt.Errorf("creating upload request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
@@ -80,54 +90,60 @@ func UploadFileBytes(ctx context.Context, preflight FileUploadPreflight, r io.Re
 
 	resp, err := plainClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("uploading file: %w", err)
+		return uploadResult{}, fmt.Errorf("uploading file: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// S3 returns 301/303 with Location header; InstFS returns 201 with Location
+	// S3 returns 301/303 with Location header; InstFS may return 201 with Location
 	location := resp.Header.Get("Location")
 	if location != "" {
-		return location, nil
+		return uploadResult{Location: location}, nil
 	}
 
-	// Some backends return the file object directly in the body (201)
-	if resp.StatusCode == http.StatusCreated {
+	// Some backends return the file object directly in the body (201 with no Location)
+	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return "", fmt.Errorf("reading upload response: %w", err)
+			return uploadResult{}, fmt.Errorf("reading upload response: %w", err)
 		}
-		// Try to extract location from JSON response
+		var file File
+		if err := json.Unmarshal(body, &file); err == nil && file.ID > 0 {
+			return uploadResult{InlineFile: &file}, nil
+		}
+		// Try to extract a location/url from JSON
 		var result struct {
 			Location string `json:"location"`
 			URL      string `json:"url"`
-			ID       int64  `json:"id"`
 		}
 		if err := json.Unmarshal(body, &result); err == nil {
 			if result.Location != "" {
-				return result.Location, nil
+				return uploadResult{Location: result.Location}, nil
 			}
 			if result.URL != "" {
-				return result.URL, nil
+				return uploadResult{Location: result.URL}, nil
 			}
-		}
-		// If we got an ID directly, the upload is already confirmed
-		if result.ID > 0 {
-			return "", nil // no confirmation needed
 		}
 	}
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("upload failed: HTTP %d: %s", resp.StatusCode, string(body))
+		return uploadResult{}, fmt.Errorf("upload failed: HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	return "", fmt.Errorf("upload response missing Location header (HTTP %d)", resp.StatusCode)
+	return uploadResult{}, fmt.Errorf("upload response missing Location header (HTTP %d)", resp.StatusCode)
 }
 
 // ConfirmUpload performs step 3 of Canvas's upload flow: GET the confirmation URL
 // with auth headers to finalize the upload.
 // Returns the confirmed File object with its ID.
+// The confirmation URL must point to the same Canvas instance (baseURL) for security.
 func ConfirmUpload(ctx context.Context, c *Client, locationURL string) (File, error) {
+	// Validate that the confirmation URL points to the Canvas instance,
+	// not an attacker-controlled host that could steal the Bearer token.
+	if err := validateConfirmURL(c.baseURL, locationURL); err != nil {
+		return File{}, err
+	}
+
 	resp, err := c.doRaw(ctx, "GET", locationURL)
 	if err != nil {
 		return File{}, fmt.Errorf("confirming upload: %w", err)
@@ -149,6 +165,22 @@ func ConfirmUpload(ctx context.Context, c *Client, locationURL string) (File, er
 		return File{}, fmt.Errorf("parsing confirmed file: %w", err)
 	}
 	return file, nil
+}
+
+// validateConfirmURL checks that locationURL shares the same host as the Canvas base URL.
+func validateConfirmURL(baseURL, locationURL string) error {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return fmt.Errorf("parsing base URL: %w", err)
+	}
+	loc, err := url.Parse(locationURL)
+	if err != nil {
+		return fmt.Errorf("parsing confirmation URL: %w", err)
+	}
+	if !strings.EqualFold(loc.Host, base.Host) {
+		return fmt.Errorf("confirmation URL host %q does not match Canvas host %q", loc.Host, base.Host)
+	}
+	return nil
 }
 
 // UploadFile performs the complete 3-step Canvas upload flow for a local file.
@@ -179,18 +211,18 @@ func UploadFile(ctx context.Context, c *Client, preflightPath, filePath string) 
 	}
 
 	// Step 2: Upload bytes
-	location, err := UploadFileBytes(ctx, preflight, f, filename)
+	result, err := UploadFileBytes(ctx, preflight, f, filename)
 	if err != nil {
 		return File{}, fmt.Errorf("uploading bytes: %w", err)
 	}
 
-	// Step 3: Confirm (if location URL was returned)
-	if location == "" {
-		// Some backends confirm inline — re-fetch the file info
-		return File{}, fmt.Errorf("upload completed but no confirmation URL returned")
+	// If the backend confirmed inline, no step 3 needed
+	if result.InlineFile != nil {
+		return *result.InlineFile, nil
 	}
 
-	file, err := ConfirmUpload(ctx, c, location)
+	// Step 3: Confirm via Location URL
+	file, err := ConfirmUpload(ctx, c, result.Location)
 	if err != nil {
 		return File{}, fmt.Errorf("confirming upload: %w", err)
 	}
@@ -200,7 +232,7 @@ func UploadFile(ctx context.Context, c *Client, preflightPath, filePath string) 
 
 // detectContentType returns a MIME type based on file extension.
 func detectContentType(filename string) string {
-	ext := filepath.Ext(filename)
+	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
 	case ".pdf":
 		return "application/pdf"
@@ -260,7 +292,7 @@ func detectContentType(filename string) string {
 		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 	case ".csv":
 		return "text/csv"
-	case ".r", ".R":
+	case ".r":
 		return "text/x-r"
 	case ".m":
 		return "text/x-matlab"

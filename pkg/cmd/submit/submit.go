@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -142,9 +141,4 @@ func resolveSubmissionType(files []string, opts submitOpts) (string, error) {
 	default:
 		return "", fmt.Errorf("provide files to upload, --text for text entry, or --url for URL submission")
 	}
-}
-
-// ValidSubmissionTypes returns a human-readable list of supported types.
-func ValidSubmissionTypes() string {
-	return strings.Join([]string{"online_upload (files)", "online_text_entry (--text)", "online_url (--url)"}, ", ")
 }
