@@ -150,6 +150,7 @@ func init() {
 	rootCmd.AddCommand(coursescmd.NewCmdCourse(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdDiscussions(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdDiscussion(f))
+	rootCmd.AddCommand(discussionscmd.NewCmdReply(f))
 	rootCmd.AddCommand(assignmentscmd.NewCmdAssignments(f))
 	rootCmd.AddCommand(assignmentscmd.NewCmdAssignment(f))
 	rootCmd.AddCommand(assignmentscmd.NewCmdNext(f))

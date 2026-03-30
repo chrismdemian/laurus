@@ -96,3 +96,15 @@ func FindDiscussionTopic(ctx context.Context, c *Client, courseID int64, query s
 
 	return DiscussionTopic{}, fmt.Errorf("no discussion topic matching %q: %w", query, ErrNotFound)
 }
+
+// createEntryRequest is the JSON body for posting a discussion entry.
+type createEntryRequest struct {
+	Message string `json:"message"`
+}
+
+// CreateDiscussionEntry posts a new top-level reply to a discussion topic.
+// Returns the created entry.
+func CreateDiscussionEntry(ctx context.Context, c *Client, courseID, topicID int64, message string) (DiscussionEntry, error) {
+	path := fmt.Sprintf("/api/v1/courses/%d/discussion_topics/%d/entries", courseID, topicID)
+	return Post[DiscussionEntry](ctx, c, path, createEntryRequest{Message: message})
+}
