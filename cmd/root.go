@@ -21,6 +21,7 @@ import (
 	inboxcmd "github.com/chrismdemian/laurus/pkg/cmd/inbox"
 	modulescmd "github.com/chrismdemian/laurus/pkg/cmd/modules"
 	pagescmd "github.com/chrismdemian/laurus/pkg/cmd/pages"
+	submitcmd "github.com/chrismdemian/laurus/pkg/cmd/submit"
 	synccmd "github.com/chrismdemian/laurus/pkg/cmd/sync"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
@@ -162,5 +163,6 @@ func init() {
 	rootCmd.AddCommand(modulescmd.NewCmdMarkDone(f))
 	rootCmd.AddCommand(pagescmd.NewCmdPages(f))
 	rootCmd.AddCommand(pagescmd.NewCmdPage(f))
+	rootCmd.AddCommand(submitcmd.NewCmdSubmit(f))
 	rootCmd.AddCommand(synccmd.NewCmdSync(f))
 }
