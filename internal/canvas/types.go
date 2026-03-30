@@ -403,6 +403,57 @@ type TodoItem struct {
 	HTMLURL     string      `json:"html_url"`
 }
 
+// =============================================================================
+// Write Operation Types (Phase 8)
+// =============================================================================
+
+// FileUploadPreflight is the response from Canvas's upload preflight step.
+type FileUploadPreflight struct {
+	UploadURL    string            `json:"upload_url"`
+	UploadParams map[string]string `json:"upload_params"`
+	FileParam    string            `json:"file_param"` // usually "file"
+}
+
+// CreateSubmissionRequest contains the parameters for submitting an assignment.
+type CreateSubmissionRequest struct {
+	SubmissionType string  `json:"submission_type"` // online_upload, online_text_entry, online_url
+	Body           string  `json:"body,omitempty"`
+	URL            string  `json:"url,omitempty"`
+	FileIDs        []int64 `json:"file_ids,omitempty"`
+}
+
+// Recipient represents a searchable message recipient from /search/recipients.
+type Recipient struct {
+	ID       string `json:"id"` // may be numeric string or context code
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+}
+
+// CreateConversationRequest contains the parameters for creating a new conversation.
+type CreateConversationRequest struct {
+	Recipients  []string `json:"recipients"`             // user IDs as strings
+	Subject     string   `json:"subject"`
+	Body        string   `json:"body"`
+	ContextCode string   `json:"context_code,omitempty"` // e.g. "course_123"
+}
+
+// CreatePlannerNoteRequest contains the parameters for creating a planner note.
+type CreatePlannerNoteRequest struct {
+	Title    string `json:"title"`
+	Details  string `json:"details,omitempty"`
+	TodoDate string `json:"todo_date"` // ISO 8601
+	CourseID *int64 `json:"course_id,omitempty"`
+}
+
+// PlannerOverride represents a user override on a planner item.
+type PlannerOverride struct {
+	ID              int64  `json:"id"`
+	PlannerableType string `json:"plannable_type"`
+	PlannerableID   int64  `json:"plannable_id"`
+	MarkedComplete  bool   `json:"marked_complete"`
+	Dismissed       bool   `json:"dismissed"`
+}
+
 // GradingStandard represents a grading scheme (e.g., A/B/C letter grades).
 type GradingStandard struct {
 	ID            int64                `json:"id"`
