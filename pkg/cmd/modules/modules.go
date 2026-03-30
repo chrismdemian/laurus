@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
 	"github.com/chrismdemian/laurus/internal/iostreams"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
@@ -64,6 +65,16 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 			return fmt.Errorf("listing modules: %w", err)
 		}
 		modules = append(modules, m)
+	}
+
+	// Opportunistic cache write.
+	if db, err := f.Cache(); err == nil {
+		cacheItems := make([]cache.CacheItem, len(modules))
+		for i, x := range modules {
+			cacheItems[i] = cache.CacheItem{ID: x.ID, CourseID: course.ID, Data: x}
+		}
+		_ = db.UpsertMany(cache.ResourceModules, cacheItems)
+		_ = db.SetSyncMeta(cache.ResourceModules, course.ID, len(cacheItems), "success")
 	}
 
 	if ios.IsJSON {

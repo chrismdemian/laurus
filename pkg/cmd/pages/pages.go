@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
 	"github.com/chrismdemian/laurus/internal/iostreams"
 	"github.com/chrismdemian/laurus/internal/render"
@@ -59,6 +60,16 @@ func listRun(f *cmdutil.Factory, courseQuery string) error {
 			return fmt.Errorf("listing pages: %w", err)
 		}
 		pages = append(pages, p)
+	}
+
+	// Opportunistic cache write.
+	if db, err := f.Cache(); err == nil {
+		cacheItems := make([]cache.CacheItem, len(pages))
+		for i, x := range pages {
+			cacheItems[i] = cache.CacheItem{ID: x.PageID, CourseID: course.ID, Data: x}
+		}
+		_ = db.UpsertMany(cache.ResourcePages, cacheItems)
+		_ = db.SetSyncMeta(cache.ResourcePages, course.ID, len(cacheItems), "success")
 	}
 
 	if ios.IsJSON {

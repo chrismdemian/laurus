@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
 	"github.com/chrismdemian/laurus/internal/iostreams"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
@@ -112,7 +113,19 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 			}
 			courses = append(courses, c)
 		}
+
+		// Opportunistic cache write for courses.
+		if db, err := f.Cache(); err == nil {
+			courseItems := make([]cache.CacheItem, len(courses))
+			for i, x := range courses {
+				courseItems[i] = cache.CacheItem{ID: x.ID, CourseID: 0, Data: x}
+			}
+			_ = db.UpsertMany(cache.ResourceCourses, courseItems)
+			_ = db.SetSyncMeta(cache.ResourceCourses, 0, len(courseItems), "success")
+		}
+
 		for _, course := range courses {
+			var courseAssignments []canvas.Assignment
 			for a, err := range canvas.ListAssignments(ctx, client, course.ID, canvas.ListAssignmentsOptions{
 				Include: []string{"submission"},
 				OrderBy: "due_at",
@@ -120,10 +133,21 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 				if err != nil {
 					return fmt.Errorf("listing assignments for %s: %w", course.CourseCode, err)
 				}
+				courseAssignments = append(courseAssignments, a)
 				items = append(items, assignmentWithCourse{
 					Assignment: a,
 					CourseName: course.CourseCode,
 				})
+			}
+
+			// Opportunistic cache write for assignments.
+			if db, err := f.Cache(); err == nil {
+				aItems := make([]cache.CacheItem, len(courseAssignments))
+				for i, x := range courseAssignments {
+					aItems[i] = cache.CacheItem{ID: x.ID, CourseID: course.ID, Data: x}
+				}
+				_ = db.UpsertMany(cache.ResourceAssignments, aItems)
+				_ = db.SetSyncMeta(cache.ResourceAssignments, course.ID, len(aItems), "success")
 			}
 		}
 	}

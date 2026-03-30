@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
 	"github.com/chrismdemian/laurus/internal/iostreams"
 	"github.com/chrismdemian/laurus/internal/render"
@@ -71,6 +72,16 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 			continue
 		}
 		items = append(items, t)
+	}
+
+	// Opportunistic cache write.
+	if db, err := f.Cache(); err == nil {
+		cacheItems := make([]cache.CacheItem, len(items))
+		for i, x := range items {
+			cacheItems[i] = cache.CacheItem{ID: x.ID, CourseID: course.ID, Data: x}
+		}
+		_ = db.UpsertMany(cache.ResourceDiscussions, cacheItems)
+		_ = db.SetSyncMeta(cache.ResourceDiscussions, course.ID, len(cacheItems), "success")
 	}
 
 	// Sort: pinned first, then by most recent activity

@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
 	"github.com/chrismdemian/laurus/internal/iostreams"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
@@ -78,6 +79,16 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 			return fmt.Errorf("listing conversations: %w", err)
 		}
 		items = append(items, c)
+	}
+
+	// Opportunistic cache write.
+	if db, err := f.Cache(); err == nil {
+		cacheItems := make([]cache.CacheItem, len(items))
+		for i, x := range items {
+			cacheItems[i] = cache.CacheItem{ID: x.ID, CourseID: 0, Data: x}
+		}
+		_ = db.UpsertMany(cache.ResourceConversations, cacheItems)
+		_ = db.SetSyncMeta(cache.ResourceConversations, 0, len(cacheItems), "success")
 	}
 
 	if ios.IsJSON {
