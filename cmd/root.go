@@ -13,6 +13,7 @@ import (
 	"github.com/chrismdemian/laurus/internal/iostreams"
 	announcementscmd "github.com/chrismdemian/laurus/pkg/cmd/announcements"
 	assignmentscmd "github.com/chrismdemian/laurus/pkg/cmd/assignments"
+	completioncmd "github.com/chrismdemian/laurus/pkg/cmd/completion"
 	authcmd "github.com/chrismdemian/laurus/pkg/cmd/auth"
 	calendarcmd "github.com/chrismdemian/laurus/pkg/cmd/calendar"
 	coursescmd "github.com/chrismdemian/laurus/pkg/cmd/courses"
@@ -158,6 +159,7 @@ func init() {
 	rootCmd.AddCommand(assignmentscmd.NewCmdAssignment(f))
 	rootCmd.AddCommand(assignmentscmd.NewCmdNext(f))
 	rootCmd.AddCommand(calendarcmd.NewCmdCalendar(f))
+	rootCmd.AddCommand(completioncmd.NewCmdCompletion(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourses(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourse(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdDiscussions(f))
