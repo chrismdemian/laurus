@@ -86,14 +86,30 @@ func submitRun(f *cmdutil.Factory, courseQuery, assignmentQuery string, files []
 				return fmt.Errorf("resolving path %q: %w", filePath, err)
 			}
 
-			_, _ = fmt.Fprintf(ios.Out, "Uploading %s...\n", filepath.Base(absPath))
+			name := filepath.Base(absPath)
+			_, _ = fmt.Fprintf(ios.Out, "Uploading %s...\n", name)
 
 			preflightPath := fmt.Sprintf("/api/v1/courses/%d/assignments/%d/submissions/self/files",
 				course.ID, assignment.ID)
 
-			file, err := canvas.UploadFile(ctx, client, preflightPath, absPath)
+			var progress canvas.ProgressFunc
+			if ios.IsTerminal {
+				var lastPct int64
+				progress = func(written, total int64) {
+					pct := written * 100 / total
+					if pct != lastPct {
+						lastPct = pct
+						_, _ = fmt.Fprintf(ios.ErrOut, "\r  %d%%", pct)
+					}
+					if written == total {
+						_, _ = fmt.Fprint(ios.ErrOut, "\r       \r")
+					}
+				}
+			}
+
+			file, err := canvas.UploadFileWithProgress(ctx, client, preflightPath, absPath, progress)
 			if err != nil {
-				return fmt.Errorf("uploading %q: %w", filepath.Base(absPath), err)
+				return fmt.Errorf("uploading %q: %w", name, err)
 			}
 
 			fileIDs = append(fileIDs, file.ID)

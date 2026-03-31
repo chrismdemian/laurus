@@ -14,6 +14,10 @@ import (
 	"strings"
 )
 
+// ProgressFunc is called during file upload with the number of bytes written so far
+// and the total file size in bytes. Implementations should be non-blocking.
+type ProgressFunc func(bytesWritten, totalBytes int64)
+
 // preflightRequest is the JSON body sent to Canvas's upload preflight endpoint.
 type preflightRequest struct {
 	Name        string `json:"name"`
@@ -187,6 +191,14 @@ func validateConfirmURL(baseURL, locationURL string) error {
 // The preflightPath specifies the context-specific endpoint (e.g., assignment submission files).
 // Returns the confirmed File object with its Canvas ID.
 func UploadFile(ctx context.Context, c *Client, preflightPath, filePath string) (File, error) {
+	return UploadFileWithProgress(ctx, c, preflightPath, filePath, nil)
+}
+
+// UploadFileWithProgress performs the complete 3-step Canvas upload flow with optional
+// progress reporting. If progress is nil, no progress callbacks are made.
+// If step 2 fails with HTTP 403/401 (expired upload token), it retries once with a
+// fresh preflight token.
+func UploadFileWithProgress(ctx context.Context, c *Client, preflightPath, filePath string, progress ProgressFunc) (File, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return File{}, fmt.Errorf("opening file: %w", err)
@@ -210,8 +222,28 @@ func UploadFile(ctx context.Context, c *Client, preflightPath, filePath string) 
 		return File{}, fmt.Errorf("upload preflight: %w", err)
 	}
 
-	// Step 2: Upload bytes
-	result, err := UploadFileBytes(ctx, preflight, f, filename)
+	// Step 2: Upload bytes (with optional progress wrapping)
+	var reader io.Reader = f
+	if progress != nil {
+		reader = &progressReader{r: f, total: info.Size(), fn: progress}
+	}
+
+	result, err := UploadFileBytes(ctx, preflight, reader, filename)
+	if err != nil && isUploadTokenExpired(err) {
+		// Upload token expired — get fresh preflight and retry once
+		if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
+			return File{}, fmt.Errorf("cannot retry upload (seek failed): %w", err)
+		}
+		preflight, err = PreflightUpload(ctx, c, preflightPath, filename, info.Size(), contentType)
+		if err != nil {
+			return File{}, fmt.Errorf("upload retry preflight: %w", err)
+		}
+		reader = f
+		if progress != nil {
+			reader = &progressReader{r: f, total: info.Size(), fn: progress}
+		}
+		result, err = UploadFileBytes(ctx, preflight, reader, filename)
+	}
 	if err != nil {
 		return File{}, fmt.Errorf("uploading bytes: %w", err)
 	}
@@ -228,6 +260,32 @@ func UploadFile(ctx context.Context, c *Client, preflightPath, filePath string) 
 	}
 
 	return file, nil
+}
+
+// isUploadTokenExpired checks if the error indicates an expired upload token (HTTP 403 or 401).
+func isUploadTokenExpired(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "HTTP 403") || strings.Contains(msg, "HTTP 401")
+}
+
+// progressReader wraps an io.Reader and calls fn after each Read with cumulative bytes read.
+type progressReader struct {
+	r       io.Reader
+	total   int64
+	written int64
+	fn      ProgressFunc
+}
+
+func (pr *progressReader) Read(p []byte) (int, error) {
+	n, err := pr.r.Read(p)
+	if n > 0 {
+		pr.written += int64(n)
+		pr.fn(pr.written, pr.total)
+	}
+	return n, err
 }
 
 // detectContentType returns a MIME type based on file extension.
