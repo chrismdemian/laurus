@@ -77,6 +77,7 @@ func validTable(rt ResourceType) bool {
 // pragmas are applied on every connection open.
 const pragmas = `
 PRAGMA journal_mode = WAL;
+PRAGMA busy_timeout = 5000;
 PRAGMA synchronous = normal;
 PRAGMA temp_store = memory;
 PRAGMA mmap_size = 268435456;
