@@ -72,12 +72,12 @@ func doctorRun(f *cmdutil.Factory) error {
 	}
 
 	printResult := func(r checkResult) {
-		fmt.Fprintf(ios.Out, "  %s %s  %s\n", formatStatus(r.Status), nameStyle.Render(r.Name), r.Detail)
+		_, _ = fmt.Fprintf(ios.Out, "  %s %s  %s\n", formatStatus(r.Status), nameStyle.Render(r.Name), r.Detail)
 	}
 
 	// Header
-	fmt.Fprintf(ios.Out, "Laurus %s (%s) built %s\n", f.Version, runtime.GOOS+"/"+runtime.GOARCH, runtime.Version())
-	fmt.Fprintln(ios.Out)
+	_, _ = fmt.Fprintf(ios.Out, "Laurus %s (%s) built %s\n", f.Version, runtime.GOOS+"/"+runtime.GOARCH, runtime.Version())
+	_, _ = fmt.Fprintln(ios.Out)
 
 	// 1. Config
 	cfg, cfgErr := f.Config()
@@ -221,7 +221,7 @@ func doctorRun(f *cmdutil.Factory) error {
 		}
 	}
 
-	fmt.Fprintln(ios.Out)
+	_, _ = fmt.Fprintln(ios.Out)
 
 	// JSON output
 	if ios.IsJSON {
@@ -239,11 +239,11 @@ func doctorRun(f *cmdutil.Factory) error {
 		}
 	}
 	if fails > 0 {
-		fmt.Fprintf(ios.ErrOut, "%d issue(s) found. See above for details.\n", fails+warns)
+		_, _ = fmt.Fprintf(ios.ErrOut, "%d issue(s) found. See above for details.\n", fails+warns)
 	} else if warns > 0 {
-		fmt.Fprintf(ios.ErrOut, "%d warning(s), but everything should work.\n", warns)
+		_, _ = fmt.Fprintf(ios.ErrOut, "%d warning(s), but everything should work.\n", warns)
 	} else {
-		fmt.Fprintln(ios.ErrOut, "All checks passed.")
+		_, _ = fmt.Fprintln(ios.ErrOut, "All checks passed.")
 	}
 
 	return nil

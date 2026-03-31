@@ -23,9 +23,9 @@ const (
 
 // CachedCheck stores the result of a version check to avoid hitting GitHub on every startup.
 type CachedCheck struct {
-	LatestVersion string    `json:"latest_version"`
-	CurrentVersion string   `json:"current_version"`
-	CheckedAt     time.Time `json:"checked_at"`
+	LatestVersion  string    `json:"latest_version"`
+	CurrentVersion string    `json:"current_version"`
+	CheckedAt      time.Time `json:"checked_at"`
 }
 
 // CheckResult holds the result of a live version check.

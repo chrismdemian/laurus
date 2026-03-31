@@ -16,9 +16,9 @@ import (
 	"github.com/chrismdemian/laurus/internal/update"
 	announcementscmd "github.com/chrismdemian/laurus/pkg/cmd/announcements"
 	assignmentscmd "github.com/chrismdemian/laurus/pkg/cmd/assignments"
-	completioncmd "github.com/chrismdemian/laurus/pkg/cmd/completion"
 	authcmd "github.com/chrismdemian/laurus/pkg/cmd/auth"
 	calendarcmd "github.com/chrismdemian/laurus/pkg/cmd/calendar"
+	completioncmd "github.com/chrismdemian/laurus/pkg/cmd/completion"
 	coursescmd "github.com/chrismdemian/laurus/pkg/cmd/courses"
 	discussionscmd "github.com/chrismdemian/laurus/pkg/cmd/discussions"
 	doctorcmd "github.com/chrismdemian/laurus/pkg/cmd/doctor"
@@ -253,6 +253,6 @@ func checkUpdateOnStartup(cmd *cobra.Command) {
 	if cached != nil && cached.CurrentVersion == version && cached.LatestVersion != "" && cached.LatestVersion != version {
 		// Double-check that the cached version is actually newer (not just different)
 		// by verifying it wasn't cached for a different binary version
-		fmt.Fprintf(cmd.ErrOrStderr(), "A new version (%s) is available. Run 'laurus update' to upgrade.\n", cached.LatestVersion)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "A new version (%s) is available. Run 'laurus update' to upgrade.\n", cached.LatestVersion)
 	}
 }
