@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 )
 
@@ -34,6 +35,33 @@ func Get[T any](ctx context.Context, c *Client, path string, params url.Values) 
 		return zero, fmt.Errorf("parsing response: %w", err)
 	}
 	return result, nil
+}
+
+// GetWithHeaders performs a GET request, unmarshals JSON into T, and also returns response headers.
+func GetWithHeaders[T any](ctx context.Context, c *Client, path string, params url.Values) (T, http.Header, error) {
+	var zero T
+
+	fullPath := path
+	if len(params) > 0 {
+		fullPath = path + "?" + params.Encode()
+	}
+
+	resp, err := c.do(ctx, "GET", fullPath, nil)
+	if err != nil {
+		return zero, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return zero, nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	var result T
+	if err := json.Unmarshal(body, &result); err != nil {
+		return zero, nil, fmt.Errorf("parsing response: %w", err)
+	}
+	return result, resp.Header, nil
 }
 
 // Post performs a POST request with a JSON body and unmarshals the response into T.

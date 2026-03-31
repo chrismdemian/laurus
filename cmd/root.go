@@ -21,6 +21,7 @@ import (
 	calendarcmd "github.com/chrismdemian/laurus/pkg/cmd/calendar"
 	coursescmd "github.com/chrismdemian/laurus/pkg/cmd/courses"
 	discussionscmd "github.com/chrismdemian/laurus/pkg/cmd/discussions"
+	doctorcmd "github.com/chrismdemian/laurus/pkg/cmd/doctor"
 	filescmd "github.com/chrismdemian/laurus/pkg/cmd/files"
 	gradescmd "github.com/chrismdemian/laurus/pkg/cmd/grades"
 	inboxcmd "github.com/chrismdemian/laurus/pkg/cmd/inbox"
@@ -170,6 +171,7 @@ func init() {
 	rootCmd.AddCommand(coursescmd.NewCmdCourses(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourse(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdDiscussions(f))
+	rootCmd.AddCommand(doctorcmd.NewCmdDoctor(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdDiscussion(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdReply(f))
 	rootCmd.AddCommand(filescmd.NewCmdFiles(f))
