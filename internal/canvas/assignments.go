@@ -109,6 +109,62 @@ func ListUpcomingEvents(ctx context.Context, c *Client) ([]UpcomingEvent, error)
 	return Get[[]UpcomingEvent](ctx, c, "/api/v1/users/self/upcoming_events", nil)
 }
 
+// ListCalendarEventsOptions controls filtering for ListCalendarEvents.
+type ListCalendarEventsOptions struct {
+	// Type is "event" or "assignment". Must call separately for each type.
+	Type string
+
+	// StartDate filters events starting on or after this date (YYYY-MM-DD).
+	StartDate string
+
+	// EndDate filters events ending on or before this date (YYYY-MM-DD).
+	EndDate string
+
+	// ContextCodes limits to specific courses: ["course_123", "course_456"].
+	// Max 10 per request.
+	ContextCodes []string
+}
+
+// ListCalendarEvents returns an iterator over calendar events for the given options.
+// Canvas requires separate calls for type=event and type=assignment.
+// Context codes are chunked into groups of 10 (Canvas API limit).
+func ListCalendarEvents(ctx context.Context, c *Client, opts ListCalendarEventsOptions) iter.Seq2[CalendarEvent, error] {
+	return func(yield func(CalendarEvent, error) bool) {
+		// Chunk context codes into groups of 10.
+		codes := opts.ContextCodes
+		if len(codes) == 0 {
+			codes = []string{"user_self"}
+		}
+		for i := 0; i < len(codes); i += 10 {
+			end := i + 10
+			if end > len(codes) {
+				end = len(codes)
+			}
+			chunk := codes[i:end]
+
+			params := url.Values{}
+			if opts.Type != "" {
+				params.Set("type", opts.Type)
+			}
+			if opts.StartDate != "" {
+				params.Set("start_date", opts.StartDate)
+			}
+			if opts.EndDate != "" {
+				params.Set("end_date", opts.EndDate)
+			}
+			for _, cc := range chunk {
+				params.Add("context_codes[]", cc)
+			}
+
+			for ev, err := range Paginate[CalendarEvent](ctx, c, "/api/v1/calendar_events", params) {
+				if !yield(ev, err) {
+					return
+				}
+			}
+		}
+	}
+}
+
 // ListMissingSubmissions returns an iterator over assignments with missing submissions.
 func ListMissingSubmissions(ctx context.Context, c *Client, include []string) iter.Seq2[Assignment, error] {
 	path := "/api/v1/users/self/missing_submissions"

@@ -14,6 +14,7 @@ import (
 	announcementscmd "github.com/chrismdemian/laurus/pkg/cmd/announcements"
 	assignmentscmd "github.com/chrismdemian/laurus/pkg/cmd/assignments"
 	authcmd "github.com/chrismdemian/laurus/pkg/cmd/auth"
+	calendarcmd "github.com/chrismdemian/laurus/pkg/cmd/calendar"
 	coursescmd "github.com/chrismdemian/laurus/pkg/cmd/courses"
 	discussionscmd "github.com/chrismdemian/laurus/pkg/cmd/discussions"
 	filescmd "github.com/chrismdemian/laurus/pkg/cmd/files"
@@ -21,10 +22,15 @@ import (
 	inboxcmd "github.com/chrismdemian/laurus/pkg/cmd/inbox"
 	mcpcmd "github.com/chrismdemian/laurus/pkg/cmd/mcp"
 	modulescmd "github.com/chrismdemian/laurus/pkg/cmd/modules"
+	officehourscmd "github.com/chrismdemian/laurus/pkg/cmd/officehours"
+	opencmd "github.com/chrismdemian/laurus/pkg/cmd/open"
 	pagescmd "github.com/chrismdemian/laurus/pkg/cmd/pages"
+	searchcmd "github.com/chrismdemian/laurus/pkg/cmd/search"
+	statuscmd "github.com/chrismdemian/laurus/pkg/cmd/status"
 	submitcmd "github.com/chrismdemian/laurus/pkg/cmd/submit"
 	synccmd "github.com/chrismdemian/laurus/pkg/cmd/sync"
 	todocmd "github.com/chrismdemian/laurus/pkg/cmd/todo"
+	watchcmd "github.com/chrismdemian/laurus/pkg/cmd/watch"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
 
@@ -148,14 +154,15 @@ func init() {
 	rootCmd.AddCommand(announcementscmd.NewCmdAnnouncements(f))
 	rootCmd.AddCommand(announcementscmd.NewCmdAnnouncement(f))
 	rootCmd.AddCommand(authcmd.NewCmdAuth(f))
+	rootCmd.AddCommand(assignmentscmd.NewCmdAssignments(f))
+	rootCmd.AddCommand(assignmentscmd.NewCmdAssignment(f))
+	rootCmd.AddCommand(assignmentscmd.NewCmdNext(f))
+	rootCmd.AddCommand(calendarcmd.NewCmdCalendar(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourses(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourse(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdDiscussions(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdDiscussion(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdReply(f))
-	rootCmd.AddCommand(assignmentscmd.NewCmdAssignments(f))
-	rootCmd.AddCommand(assignmentscmd.NewCmdAssignment(f))
-	rootCmd.AddCommand(assignmentscmd.NewCmdNext(f))
 	rootCmd.AddCommand(filescmd.NewCmdFiles(f))
 	rootCmd.AddCommand(filescmd.NewCmdDownload(f))
 	rootCmd.AddCommand(filescmd.NewCmdDownloadAll(f))
@@ -165,9 +172,14 @@ func init() {
 	rootCmd.AddCommand(mcpcmd.NewCmdMCP(f))
 	rootCmd.AddCommand(modulescmd.NewCmdModules(f))
 	rootCmd.AddCommand(modulescmd.NewCmdMarkDone(f))
+	rootCmd.AddCommand(officehourscmd.NewCmdOfficeHours(f))
+	rootCmd.AddCommand(opencmd.NewCmdOpen(f))
 	rootCmd.AddCommand(pagescmd.NewCmdPages(f))
 	rootCmd.AddCommand(pagescmd.NewCmdPage(f))
+	rootCmd.AddCommand(searchcmd.NewCmdSearch(f))
+	rootCmd.AddCommand(statuscmd.NewCmdStatus(f))
 	rootCmd.AddCommand(submitcmd.NewCmdSubmit(f))
 	rootCmd.AddCommand(synccmd.NewCmdSync(f))
 	rootCmd.AddCommand(todocmd.NewCmdTodo(f))
+	rootCmd.AddCommand(watchcmd.NewCmdWatch(f))
 }

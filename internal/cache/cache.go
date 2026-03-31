@@ -37,6 +37,7 @@ const (
 	ResourceFolders          ResourceType = "folders"
 	ResourceConversations    ResourceType = "conversations"
 	ResourceGradingStandards ResourceType = "grading_standards"
+	ResourceCalendarEvents   ResourceType = "calendar_events"
 )
 
 // TTL returns the freshness duration for a resource type.
@@ -52,7 +53,7 @@ func TTL(rt ResourceType) time.Duration {
 		return 2 * time.Hour
 	case ResourceFiles, ResourceFolders:
 		return 1 * time.Hour
-	case ResourceAnnouncements, ResourceDiscussions:
+	case ResourceAnnouncements, ResourceDiscussions, ResourceCalendarEvents:
 		return 30 * time.Minute
 	case ResourceSubmissions:
 		return 15 * time.Minute
@@ -140,7 +141,7 @@ func (d *DB) Reset() error {
 			return fmt.Errorf("dropping table %s: %w", table, err)
 		}
 	}
-	for _, table := range []string{"sync_meta", "file_cache"} {
+	for _, table := range []string{"sync_meta", "file_cache", "notifications_sent"} {
 		if _, err := d.db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s", table)); err != nil {
 			return fmt.Errorf("dropping table %s: %w", table, err)
 		}
@@ -152,4 +153,25 @@ func (d *DB) Reset() error {
 	}
 
 	return migrate(d.db)
+}
+
+// HasNotified returns true if a notification with the given key has been sent.
+func (d *DB) HasNotified(key string) bool {
+	var count int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM notifications_sent WHERE key = ?", key).Scan(&count)
+	return err == nil && count > 0
+}
+
+// MarkNotified records that a notification with the given key has been sent.
+func (d *DB) MarkNotified(key string) error {
+	_, err := d.db.Exec(
+		"INSERT OR IGNORE INTO notifications_sent (key) VALUES (?)", key)
+	return err
+}
+
+// CleanNotifications removes notification records older than the given duration.
+func (d *DB) CleanNotifications(maxAge time.Duration) error {
+	cutoff := time.Now().Add(-maxAge).UTC().Format(time.RFC3339)
+	_, err := d.db.Exec("DELETE FROM notifications_sent WHERE sent_at < ?", cutoff)
+	return err
 }

@@ -21,6 +21,7 @@ var entityTables = []string{
 	"folders",
 	"conversations",
 	"grading_standards",
+	"calendar_events",
 }
 
 // migrationV1 creates the initial schema.
@@ -172,8 +173,26 @@ CREATE INDEX IF NOT EXISTS idx_file_cache_course ON file_cache(course_id);
 
 // migrations is an ordered list of SQL DDL scripts.
 // Index 0 = version 1, index 1 = version 2, etc.
+// migrationV2 adds calendar_events and notifications_sent tables.
+const migrationV2 = `
+CREATE TABLE IF NOT EXISTS calendar_events (
+    id         INTEGER PRIMARY KEY,
+    course_id  INTEGER,
+    data       TEXT NOT NULL,
+    updated_at TEXT,
+    fetched_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_calendar_events_course ON calendar_events(course_id);
+
+CREATE TABLE IF NOT EXISTS notifications_sent (
+    key        TEXT PRIMARY KEY,
+    sent_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+`
+
 var migrations = []string{
 	migrationV1,
+	migrationV2,
 }
 
 // migrate applies pending schema migrations using PRAGMA user_version.

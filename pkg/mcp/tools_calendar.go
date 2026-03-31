@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -13,7 +14,13 @@ import (
 func (s *Server) registerCalendarTools(srv *server.MCPServer) {
 	srv.AddTool(
 		mcplib.NewTool("list_calendar",
-			mcplib.WithDescription("List upcoming calendar events and assignment deadlines."),
+			mcplib.WithDescription("List calendar events and assignment deadlines. Defaults to upcoming events; use start_date/end_date for a custom range."),
+			mcplib.WithString("start_date",
+				mcplib.Description("Start date (YYYY-MM-DD). If omitted, shows upcoming events."),
+			),
+			mcplib.WithString("end_date",
+				mcplib.Description("End date (YYYY-MM-DD). If omitted, shows upcoming events."),
+			),
 		),
 		mcplib.NewTypedToolHandler(s.handleListCalendar),
 	)
@@ -41,43 +48,63 @@ func (s *Server) registerCalendarTools(srv *server.MCPServer) {
 	)
 }
 
-type listCalendarArgs struct{}
+type listCalendarArgs struct {
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+}
 
-func (s *Server) handleListCalendar(ctx context.Context, _ mcplib.CallToolRequest, _ listCalendarArgs) (*mcplib.CallToolResult, error) {
+func (s *Server) handleListCalendar(ctx context.Context, _ mcplib.CallToolRequest, args listCalendarArgs) (*mcplib.CallToolResult, error) {
 	client, err := s.getClient()
 	if err != nil {
 		return toolError(err)
 	}
 
-	events, err := canvas.ListUpcomingEvents(ctx, client)
+	// If no date range specified, use upcoming events (fast path).
+	if args.StartDate == "" && args.EndDate == "" {
+		events, err := canvas.ListUpcomingEvents(ctx, client)
+		if err != nil {
+			return toolError(err)
+		}
+
+		if len(events) == 0 {
+			return mcplib.NewToolResultText("No upcoming events or deadlines."), nil
+		}
+
+		return jsonResult(events)
+	}
+
+	// Date-range query using /calendar_events.
+	var contextCodes []string
+	courses, err := collectIter(canvas.ListCourses(ctx, client, canvas.CourseListOptions{
+		EnrollmentState: "active",
+	}))
 	if err != nil {
 		return toolError(err)
 	}
-
-	type calendarEvent struct {
-		Title   string     `json:"title"`
-		Type    string     `json:"type"`
-		StartAt *time.Time `json:"start_at,omitempty"`
-		EndAt   *time.Time `json:"end_at,omitempty"`
-		HTMLURL string     `json:"html_url"`
+	for _, c := range courses {
+		contextCodes = append(contextCodes, fmt.Sprintf("course_%d", c.ID))
 	}
 
-	results := make([]calendarEvent, 0, len(events))
-	for _, e := range events {
-		results = append(results, calendarEvent{
-			Title:   e.Title,
-			Type:    e.Type,
-			StartAt: e.StartAt,
-			EndAt:   e.EndAt,
-			HTMLURL: e.HTMLURL,
-		})
+	var events []canvas.CalendarEvent
+	for _, eventType := range []string{"event", "assignment"} {
+		for ev, err := range canvas.ListCalendarEvents(ctx, client, canvas.ListCalendarEventsOptions{
+			Type:         eventType,
+			StartDate:    args.StartDate,
+			EndDate:      args.EndDate,
+			ContextCodes: contextCodes,
+		}) {
+			if err != nil {
+				return toolError(err)
+			}
+			events = append(events, ev)
+		}
 	}
 
-	if len(results) == 0 {
-		return mcplib.NewToolResultText("No upcoming events or deadlines."), nil
+	if len(events) == 0 {
+		return mcplib.NewToolResultText("No events in the specified date range."), nil
 	}
 
-	return jsonResult(results)
+	return jsonResult(events)
 }
 
 type getTodoArgs struct{}
@@ -138,70 +165,12 @@ func (s *Server) handleSearchCourse(ctx context.Context, _ mcplib.CallToolReques
 		return toolError(err)
 	}
 
-	type searchResult struct {
-		Type    string `json:"type"`
-		ID      int64  `json:"id,omitempty"`
-		Title   string `json:"title"`
-		HTMLURL string `json:"html_url,omitempty"`
-	}
-
-	var results []searchResult
-	var lastErr error
-
-	// Search assignments
-	assignments, err := collectIter(canvas.ListAssignments(ctx, client, course.ID, canvas.ListAssignmentsOptions{
-		SearchTerm: args.Query,
-	}))
-	if err == nil {
-		for _, a := range assignments {
-			results = append(results, searchResult{
-				Type:    "assignment",
-				ID:      a.ID,
-				Title:   a.Name,
-				HTMLURL: a.HTMLURL,
-			})
-		}
-	} else {
-		lastErr = err
-	}
-
-	// Search pages (may 404 if Pages tab is disabled — known gotcha)
-	pages, err := collectIter(canvas.ListPages(ctx, client, course.ID, canvas.ListPagesOptions{
-		SearchTerm: args.Query,
-	}))
-	if err == nil {
-		for _, p := range pages {
-			results = append(results, searchResult{
-				Type:  "page",
-				ID:    p.PageID,
-				Title: p.Title,
-			})
-		}
-	} else {
-		lastErr = err
-	}
-
-	// Search discussions
-	discussions, err := collectIter(canvas.ListDiscussionTopics(ctx, client, course.ID, canvas.ListDiscussionTopicsOptions{
-		SearchTerm: args.Query,
-	}))
-	if err == nil {
-		for _, d := range discussions {
-			results = append(results, searchResult{
-				Type:    "discussion",
-				ID:      d.ID,
-				Title:   d.Title,
-				HTMLURL: d.HTMLURL,
-			})
-		}
-	} else {
-		lastErr = err
+	results, err := canvas.SearchCourseWithSmartFallback(ctx, client, course.ID, args.Query)
+	if err != nil {
+		return toolError(err)
 	}
 
 	if len(results) == 0 {
-		if lastErr != nil {
-			return toolError(lastErr)
-		}
 		return mcplib.NewToolResultText("No results found."), nil
 	}
 

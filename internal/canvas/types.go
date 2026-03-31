@@ -229,6 +229,7 @@ type Page struct {
 	Published     bool      `json:"published"`
 	FrontPage     bool      `json:"front_page"`
 	LockedForUser bool      `json:"locked_for_user"`
+	HTMLURL       string    `json:"html_url"`
 }
 
 // File represents a Canvas file.
