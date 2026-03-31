@@ -12,29 +12,8 @@ import (
 
 // Get performs a GET request and unmarshals the JSON response into T.
 func Get[T any](ctx context.Context, c *Client, path string, params url.Values) (T, error) {
-	var zero T
-
-	fullPath := path
-	if len(params) > 0 {
-		fullPath = path + "?" + params.Encode()
-	}
-
-	resp, err := c.do(ctx, "GET", fullPath, nil)
-	if err != nil {
-		return zero, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return zero, fmt.Errorf("reading response: %w", err)
-	}
-
-	var result T
-	if err := json.Unmarshal(body, &result); err != nil {
-		return zero, fmt.Errorf("parsing response: %w", err)
-	}
-	return result, nil
+	result, _, err := GetWithHeaders[T](ctx, c, path, params)
+	return result, err
 }
 
 // GetWithHeaders performs a GET request, unmarshals JSON into T, and also returns response headers.

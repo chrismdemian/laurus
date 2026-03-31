@@ -209,10 +209,16 @@ func init() {
 
 // needsSetupHint returns true for commands that require configuration.
 // Commands like setup, auth, version, completion, doctor, mcp, and help work without config.
+// Walks the command tree so subcommands (e.g., `auth status`) are also skipped.
 func needsSetupHint(cmd *cobra.Command) bool {
-	switch cmd.Name() {
-	case "setup", "auth", "login", "version", "completion", "doctor", "mcp", "help", "update":
-		return false
+	noAuthCmds := map[string]bool{
+		"setup": true, "auth": true, "version": true, "completion": true,
+		"doctor": true, "mcp": true, "help": true, "update": true,
+	}
+	for c := cmd; c != nil; c = c.Parent() {
+		if noAuthCmds[c.Name()] {
+			return false
+		}
 	}
 	// Also skip for the root command (shows help)
 	if !cmd.HasParent() {
@@ -249,10 +255,11 @@ func checkUpdateOnStartup(cmd *cobra.Command) {
 		}()
 	}
 
-	// Show notice from cache if update is available
+	// Show notice from cache if update is available.
+	// We compare strings here (not semver) for simplicity — the cache is written by
+	// CheckLatest which uses proper semver GreaterThan, so false positives only occur
+	// if someone intentionally downgrades. The cache refreshes every 24h.
 	if cached != nil && cached.CurrentVersion == version && cached.LatestVersion != "" && cached.LatestVersion != version {
-		// Double-check that the cached version is actually newer (not just different)
-		// by verifying it wasn't cached for a different binary version
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "A new version (%s) is available. Run 'laurus update' to upgrade.\n", cached.LatestVersion)
 	}
 }

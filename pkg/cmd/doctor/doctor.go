@@ -72,12 +72,16 @@ func doctorRun(f *cmdutil.Factory) error {
 	}
 
 	printResult := func(r checkResult) {
-		_, _ = fmt.Fprintf(ios.Out, "  %s %s  %s\n", formatStatus(r.Status), nameStyle.Render(r.Name), r.Detail)
+		if !ios.IsJSON {
+			_, _ = fmt.Fprintf(ios.Out, "  %s %s  %s\n", formatStatus(r.Status), nameStyle.Render(r.Name), r.Detail)
+		}
 	}
 
 	// Header
-	_, _ = fmt.Fprintf(ios.Out, "Laurus %s (%s) built %s\n", f.Version, runtime.GOOS+"/"+runtime.GOARCH, runtime.Version())
-	_, _ = fmt.Fprintln(ios.Out)
+	if !ios.IsJSON {
+		_, _ = fmt.Fprintf(ios.Out, "Laurus %s (%s) built %s\n", f.Version, runtime.GOOS+"/"+runtime.GOARCH, runtime.Version())
+		_, _ = fmt.Fprintln(ios.Out)
+	}
 
 	// 1. Config
 	cfg, cfgErr := f.Config()
@@ -221,12 +225,12 @@ func doctorRun(f *cmdutil.Factory) error {
 		}
 	}
 
-	_, _ = fmt.Fprintln(ios.Out)
-
-	// JSON output
+	// JSON output — return early, skip human summary
 	if ios.IsJSON {
 		return cmdutil.RenderJSON(ios, results)
 	}
+
+	_, _ = fmt.Fprintln(ios.Out)
 
 	// Summary
 	var warns, fails int

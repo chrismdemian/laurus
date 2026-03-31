@@ -229,7 +229,7 @@ func UploadFileWithProgress(ctx context.Context, c *Client, preflightPath, fileP
 	}
 
 	result, err := UploadFileBytes(ctx, preflight, reader, filename)
-	if err != nil && isUploadTokenExpired(err) {
+	if err != nil && isUploadForbiddenOrUnauthorized(err) {
 		// Upload token expired — get fresh preflight and retry once
 		if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
 			return File{}, fmt.Errorf("cannot retry upload (seek failed): %w", err)
@@ -262,8 +262,10 @@ func UploadFileWithProgress(ctx context.Context, c *Client, preflightPath, fileP
 	return file, nil
 }
 
-// isUploadTokenExpired checks if the error indicates an expired upload token (HTTP 403 or 401).
-func isUploadTokenExpired(err error) bool {
+// isUploadForbiddenOrUnauthorized checks if the error indicates an HTTP 403 or 401,
+// which may mean the upload token expired (preflight tokens have 5-30 min TTL).
+// Used to decide whether to retry step 2 with a fresh preflight token.
+func isUploadForbiddenOrUnauthorized(err error) bool {
 	if err == nil {
 		return false
 	}
