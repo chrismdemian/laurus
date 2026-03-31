@@ -1,6 +1,11 @@
 package canvas
 
-import "time"
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+	"time"
+)
 
 // =============================================================================
 // Core Types (Phase 2)
@@ -351,6 +356,8 @@ type ConversationMessage struct {
 }
 
 // CalendarEvent represents a Canvas calendar event from /calendar_events.
+// When type=assignment, Canvas may return string IDs like "assignment_500"
+// instead of integers. The custom UnmarshalJSON handles both formats.
 type CalendarEvent struct {
 	ID            int64      `json:"id"`
 	Title         string     `json:"title"`
@@ -361,6 +368,34 @@ type CalendarEvent struct {
 	WorkflowState string     `json:"workflow_state"`
 	AllDay        bool       `json:"all_day"`
 	HTMLURL       string     `json:"html_url"`
+}
+
+// UnmarshalJSON handles Canvas returning string IDs for assignment-type events.
+func (ce *CalendarEvent) UnmarshalJSON(data []byte) error {
+	// Alias to avoid infinite recursion.
+	type Alias CalendarEvent
+	aux := &struct {
+		ID json.RawMessage `json:"id"`
+		*Alias
+	}{
+		Alias: (*Alias)(ce),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if len(aux.ID) > 0 {
+		// Try integer first, then extract from string like "assignment_500".
+		if err := json.Unmarshal(aux.ID, &ce.ID); err != nil {
+			var s string
+			if err2 := json.Unmarshal(aux.ID, &s); err2 == nil {
+				// Extract numeric suffix: "assignment_500" -> 500
+				if idx := strings.LastIndex(s, "_"); idx >= 0 {
+					ce.ID, _ = strconv.ParseInt(s[idx+1:], 10, 64)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // UpcomingEvent represents an item from /users/self/upcoming_events.
