@@ -19,6 +19,7 @@ import (
 	filescmd "github.com/chrismdemian/laurus/pkg/cmd/files"
 	gradescmd "github.com/chrismdemian/laurus/pkg/cmd/grades"
 	inboxcmd "github.com/chrismdemian/laurus/pkg/cmd/inbox"
+	mcpcmd "github.com/chrismdemian/laurus/pkg/cmd/mcp"
 	modulescmd "github.com/chrismdemian/laurus/pkg/cmd/modules"
 	pagescmd "github.com/chrismdemian/laurus/pkg/cmd/pages"
 	submitcmd "github.com/chrismdemian/laurus/pkg/cmd/submit"
@@ -161,6 +162,7 @@ func init() {
 	rootCmd.AddCommand(gradescmd.NewCmdGrades(f))
 	rootCmd.AddCommand(gradescmd.NewCmdGrade(f))
 	rootCmd.AddCommand(inboxcmd.NewCmdInbox(f))
+	rootCmd.AddCommand(mcpcmd.NewCmdMCP(f))
 	rootCmd.AddCommand(modulescmd.NewCmdModules(f))
 	rootCmd.AddCommand(modulescmd.NewCmdMarkDone(f))
 	rootCmd.AddCommand(pagescmd.NewCmdPages(f))
