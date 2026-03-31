@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/chrismdemian/laurus/internal/canvas"
 	"github.com/chrismdemian/laurus/internal/config"
 	"github.com/chrismdemian/laurus/internal/iostreams"
+	"github.com/chrismdemian/laurus/internal/update"
 	announcementscmd "github.com/chrismdemian/laurus/pkg/cmd/announcements"
 	assignmentscmd "github.com/chrismdemian/laurus/pkg/cmd/assignments"
 	completioncmd "github.com/chrismdemian/laurus/pkg/cmd/completion"
@@ -31,6 +34,7 @@ import (
 	submitcmd "github.com/chrismdemian/laurus/pkg/cmd/submit"
 	synccmd "github.com/chrismdemian/laurus/pkg/cmd/sync"
 	todocmd "github.com/chrismdemian/laurus/pkg/cmd/todo"
+	updatecmd "github.com/chrismdemian/laurus/pkg/cmd/update"
 	watchcmd "github.com/chrismdemian/laurus/pkg/cmd/watch"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
@@ -70,6 +74,9 @@ func init() {
 	})
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		// Startup version check (non-blocking, cached)
+		checkUpdateOnStartup(cmd)
+
 		if reset, _ := cmd.Flags().GetBool("reset-cache"); reset {
 			dir, err := config.Dir()
 			if err != nil {
@@ -183,5 +190,42 @@ func init() {
 	rootCmd.AddCommand(submitcmd.NewCmdSubmit(f))
 	rootCmd.AddCommand(synccmd.NewCmdSync(f))
 	rootCmd.AddCommand(todocmd.NewCmdTodo(f))
+	rootCmd.AddCommand(updatecmd.NewCmdUpdate(f))
 	rootCmd.AddCommand(watchcmd.NewCmdWatch(f))
+}
+
+// checkUpdateOnStartup prints a notice if a newer version is cached.
+// It only reads the local cache file (<1ms); if stale, it spawns a goroutine
+// to refresh the cache in the background (fire-and-forget).
+func checkUpdateOnStartup(cmd *cobra.Command) {
+	// Skip for commands where update notices would be noise
+	switch cmd.Name() {
+	case "version", "update", "completion", "mcp", "help", "setup", "doctor":
+		return
+	}
+	if version == "dev" {
+		return
+	}
+
+	cached := update.LoadCachedCheck()
+
+	// If cache is stale, refresh in background
+	if update.IsCacheStale(cached) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			result, err := update.CheckLatest(ctx, version)
+			if err != nil {
+				return
+			}
+			_ = update.SaveCachedCheck(result.LatestVersion, result.CurrentVersion)
+		}()
+	}
+
+	// Show notice from cache if update is available
+	if cached != nil && cached.CurrentVersion == version && cached.LatestVersion != "" && cached.LatestVersion != version {
+		// Double-check that the cached version is actually newer (not just different)
+		// by verifying it wasn't cached for a different binary version
+		fmt.Fprintf(cmd.ErrOrStderr(), "A new version (%s) is available. Run 'laurus update' to upgrade.\n", cached.LatestVersion)
+	}
 }
