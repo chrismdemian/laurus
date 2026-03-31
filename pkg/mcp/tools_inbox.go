@@ -31,6 +31,32 @@ func (s *Server) registerInboxTools(srv *server.MCPServer) {
 	)
 
 	srv.AddTool(
+		mcplib.NewTool("read_conversation",
+			mcplib.WithDescription("Read the full message thread of an inbox conversation."),
+			mcplib.WithNumber("conversation_id",
+				mcplib.Required(),
+				mcplib.Description("Conversation ID from list_inbox"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleReadConversation),
+	)
+
+	srv.AddTool(
+		mcplib.NewTool("reply_to_conversation",
+			mcplib.WithDescription("Reply to an existing inbox conversation."),
+			mcplib.WithNumber("conversation_id",
+				mcplib.Required(),
+				mcplib.Description("Conversation ID to reply to"),
+			),
+			mcplib.WithString("body",
+				mcplib.Required(),
+				mcplib.Description("Reply message body"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleReplyToConversation),
+	)
+
+	srv.AddTool(
 		mcplib.NewTool("send_message",
 			mcplib.WithDescription("Send a new Canvas inbox message to a recipient."),
 			mcplib.WithString("recipient",
@@ -166,4 +192,76 @@ func (s *Server) handleSendMessage(ctx context.Context, _ mcplib.CallToolRequest
 	}
 
 	return mcplib.NewToolResultText(fmt.Sprintf("Message sent to %s.", recipient.Name)), nil
+}
+
+type readConversationArgs struct {
+	ConversationID int64 `json:"conversation_id"`
+}
+
+func (s *Server) handleReadConversation(ctx context.Context, _ mcplib.CallToolRequest, args readConversationArgs) (*mcplib.CallToolResult, error) {
+	client, err := s.getClient()
+	if err != nil {
+		return toolError(err)
+	}
+
+	conv, err := canvas.GetConversation(ctx, client, args.ConversationID)
+	if err != nil {
+		return toolError(err)
+	}
+
+	// Build a participant ID→name map.
+	nameMap := make(map[int64]string)
+	for _, p := range conv.Participants {
+		nameMap[p.ID] = p.Name
+	}
+
+	type messageOut struct {
+		Author    string    `json:"author"`
+		Body      string    `json:"body"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+
+	type conversationOut struct {
+		ID       int64        `json:"id"`
+		Subject  string       `json:"subject"`
+		Messages []messageOut `json:"messages"`
+	}
+
+	out := conversationOut{
+		ID:      conv.ID,
+		Subject: conv.Subject,
+	}
+
+	for _, m := range conv.Messages {
+		author := nameMap[m.AuthorID]
+		if author == "" {
+			author = fmt.Sprintf("User %d", m.AuthorID)
+		}
+		out.Messages = append(out.Messages, messageOut{
+			Author:    author,
+			Body:      htmlToMarkdown(m.Body),
+			CreatedAt: m.CreatedAt,
+		})
+	}
+
+	return jsonResult(out)
+}
+
+type replyToConversationArgs struct {
+	ConversationID int64  `json:"conversation_id"`
+	Body           string `json:"body"`
+}
+
+func (s *Server) handleReplyToConversation(ctx context.Context, _ mcplib.CallToolRequest, args replyToConversationArgs) (*mcplib.CallToolResult, error) {
+	client, err := s.getClient()
+	if err != nil {
+		return toolError(err)
+	}
+
+	_, err = canvas.AddConversationMessage(ctx, client, args.ConversationID, args.Body)
+	if err != nil {
+		return toolError(err)
+	}
+
+	return mcplib.NewToolResultText(fmt.Sprintf("Reply sent to conversation %d.", args.ConversationID)), nil
 }

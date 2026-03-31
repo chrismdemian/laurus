@@ -44,6 +44,8 @@ func NewServer(f *cmdutil.Factory) *server.MCPServer {
 	s.registerDiscussionTools(srv)
 	s.registerInboxTools(srv)
 	s.registerModuleTools(srv)
+	s.registerFileTools(srv)
+	s.registerPageTools(srv)
 	s.registerCalendarTools(srv)
 	s.registerWriteTools(srv)
 

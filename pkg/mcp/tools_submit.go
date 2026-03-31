@@ -46,6 +46,78 @@ func (s *Server) registerWriteTools(srv *server.MCPServer) {
 		),
 		mcplib.NewTypedToolHandler(s.handleMarkTodoDone),
 	)
+
+	srv.AddTool(
+		mcplib.NewTool("create_todo",
+			mcplib.WithDescription("Create a new planner note (todo item)."),
+			mcplib.WithString("title",
+				mcplib.Required(),
+				mcplib.Description("Title for the planner note"),
+			),
+			mcplib.WithString("date",
+				mcplib.Required(),
+				mcplib.Description("Due date in YYYY-MM-DD format"),
+			),
+			mcplib.WithString("details",
+				mcplib.Description("Additional details or description"),
+			),
+			mcplib.WithString("course",
+				mcplib.Description("Course to associate the note with (optional)"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleCreateTodo),
+	)
+
+	srv.AddTool(
+		mcplib.NewTool("dismiss_todo",
+			mcplib.WithDescription("Dismiss a planner note (hide it from the todo list)."),
+			mcplib.WithNumber("note_id",
+				mcplib.Required(),
+				mcplib.Description("Planner note ID to dismiss"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleDismissTodo),
+	)
+
+	srv.AddTool(
+		mcplib.NewTool("mark_module_item_done",
+			mcplib.WithDescription("Mark a module item as complete (for items with must_mark_done requirement)."),
+			mcplib.WithString("course",
+				mcplib.Required(),
+				mcplib.Description("Course name, code, or ID"),
+			),
+			mcplib.WithNumber("module_id",
+				mcplib.Required(),
+				mcplib.Description("Module ID"),
+			),
+			mcplib.WithNumber("item_id",
+				mcplib.Required(),
+				mcplib.Description("Module item ID"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleMarkModuleItemDone),
+	)
+
+	srv.AddTool(
+		mcplib.NewTool("list_office_hours",
+			mcplib.WithDescription("List available office hours appointment slots."),
+			mcplib.WithString("course",
+				mcplib.Description("Filter by course name, code, or ID (optional)"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleListOfficeHours),
+	)
+
+	srv.AddTool(
+		mcplib.NewTool("book_office_hours",
+			mcplib.WithDescription("Reserve an office hours appointment slot."),
+			mcplib.WithNumber("slot_id",
+				mcplib.Required(),
+				mcplib.Description("Calendar event ID of the time slot to book"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleBookOfficeHours),
+	)
 }
 
 type submitAssignmentArgs struct {
@@ -126,4 +198,145 @@ func (s *Server) handleMarkTodoDone(ctx context.Context, _ mcplib.CallToolReques
 	}
 
 	return mcplib.NewToolResultText(fmt.Sprintf("Planner note %d marked as done.", args.NoteID)), nil
+}
+
+type createTodoArgs struct {
+	Title   string `json:"title"`
+	Date    string `json:"date"`
+	Details string `json:"details"`
+	Course  string `json:"course"`
+}
+
+func (s *Server) handleCreateTodo(ctx context.Context, _ mcplib.CallToolRequest, args createTodoArgs) (*mcplib.CallToolResult, error) {
+	client, err := s.getClient()
+	if err != nil {
+		return toolError(err)
+	}
+
+	req := canvas.CreatePlannerNoteRequest{
+		Title:    args.Title,
+		TodoDate: args.Date,
+		Details:  args.Details,
+	}
+
+	if args.Course != "" {
+		course, err := canvas.FindCourse(ctx, client, args.Course)
+		if err != nil {
+			return toolError(err)
+		}
+		req.CourseID = &course.ID
+	}
+
+	note, err := canvas.CreatePlannerNote(ctx, client, req)
+	if err != nil {
+		return toolError(err)
+	}
+
+	return mcplib.NewToolResultText(fmt.Sprintf("Created planner note \"%s\" (ID: %d) due %s.", note.Title, note.ID, args.Date)), nil
+}
+
+type dismissTodoArgs struct {
+	NoteID int64 `json:"note_id"`
+}
+
+func (s *Server) handleDismissTodo(ctx context.Context, _ mcplib.CallToolRequest, args dismissTodoArgs) (*mcplib.CallToolResult, error) {
+	client, err := s.getClient()
+	if err != nil {
+		return toolError(err)
+	}
+
+	_, err = canvas.CreatePlannerOverride(ctx, client, "planner_note", args.NoteID, false, true)
+	if err != nil {
+		return toolError(err)
+	}
+
+	return mcplib.NewToolResultText(fmt.Sprintf("Planner note %d dismissed.", args.NoteID)), nil
+}
+
+type markModuleItemDoneArgs struct {
+	Course   string `json:"course"`
+	ModuleID int64  `json:"module_id"`
+	ItemID   int64  `json:"item_id"`
+}
+
+func (s *Server) handleMarkModuleItemDone(ctx context.Context, _ mcplib.CallToolRequest, args markModuleItemDoneArgs) (*mcplib.CallToolResult, error) {
+	client, err := s.getClient()
+	if err != nil {
+		return toolError(err)
+	}
+
+	course, err := canvas.FindCourse(ctx, client, args.Course)
+	if err != nil {
+		return toolError(err)
+	}
+
+	err = canvas.MarkModuleItemDone(ctx, client, course.ID, args.ModuleID, args.ItemID)
+	if err != nil {
+		return toolError(err)
+	}
+
+	return mcplib.NewToolResultText(fmt.Sprintf("Module item %d marked as done.", args.ItemID)), nil
+}
+
+type listOfficeHoursArgs struct {
+	Course string `json:"course"`
+}
+
+func (s *Server) handleListOfficeHours(ctx context.Context, _ mcplib.CallToolRequest, args listOfficeHoursArgs) (*mcplib.CallToolResult, error) {
+	client, err := s.getClient()
+	if err != nil {
+		return toolError(err)
+	}
+
+	groups, err := canvas.ListAppointmentGroups(ctx, client)
+	if err != nil {
+		return toolError(err)
+	}
+
+	if args.Course != "" {
+		course, err := canvas.FindCourse(ctx, client, args.Course)
+		if err != nil {
+			return toolError(err)
+		}
+		contextCode := fmt.Sprintf("course_%d", course.ID)
+		var filtered []canvas.AppointmentGroup
+		for _, g := range groups {
+			for _, cc := range g.ContextCodes {
+				if cc == contextCode {
+					filtered = append(filtered, g)
+					break
+				}
+			}
+		}
+		groups = filtered
+	}
+
+	if len(groups) == 0 {
+		return mcplib.NewToolResultText("No available office hours found."), nil
+	}
+
+	return jsonResult(groups)
+}
+
+type bookOfficeHoursArgs struct {
+	SlotID int64 `json:"slot_id"`
+}
+
+func (s *Server) handleBookOfficeHours(ctx context.Context, _ mcplib.CallToolRequest, args bookOfficeHoursArgs) (*mcplib.CallToolResult, error) {
+	client, err := s.getClient()
+	if err != nil {
+		return toolError(err)
+	}
+
+	reservation, err := canvas.ReserveAppointmentSlot(ctx, client, args.SlotID)
+	if err != nil {
+		return toolError(err)
+	}
+
+	msg := fmt.Sprintf("Booked: %s", reservation.Title)
+	if reservation.StartAt != nil {
+		msg += fmt.Sprintf(" at %s", reservation.StartAt.Format("Mon Jan 2, 3:04 PM"))
+	}
+
+	return mcplib.NewToolResultText(msg), nil
 }

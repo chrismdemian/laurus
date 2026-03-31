@@ -34,10 +34,9 @@ func (s *Server) registerCalendarTools(srv *server.MCPServer) {
 
 	srv.AddTool(
 		mcplib.NewTool("search_course",
-			mcplib.WithDescription("Search for content within a course by keyword. Searches assignments, pages, discussions, and announcements."),
+			mcplib.WithDescription("Search for content by keyword. If course is provided, searches within that course. If omitted, searches all active courses."),
 			mcplib.WithString("course",
-				mcplib.Required(),
-				mcplib.Description("Course name, code, or ID"),
+				mcplib.Description("Course name, code, or ID (optional — omit to search all courses)"),
 			),
 			mcplib.WithString("query",
 				mcplib.Required(),
@@ -160,19 +159,55 @@ func (s *Server) handleSearchCourse(ctx context.Context, _ mcplib.CallToolReques
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
+	if args.Course != "" {
+		// Search a single course.
+		course, err := canvas.FindCourse(ctx, client, args.Course)
+		if err != nil {
+			return toolError(err)
+		}
+
+		results, err := canvas.SearchCourseWithSmartFallback(ctx, client, course.ID, args.Query)
+		if err != nil {
+			return toolError(err)
+		}
+
+		if len(results) == 0 {
+			return mcplib.NewToolResultText("No results found."), nil
+		}
+
+		return jsonResult(results)
+	}
+
+	// Search all active courses.
+	type courseSearchResult struct {
+		Course  string                `json:"course"`
+		Results []canvas.SearchResult `json:"results"`
+	}
+
+	var allResults []courseSearchResult
+	courses, err := collectIter(canvas.ListCourses(ctx, client, canvas.CourseListOptions{
+		EnrollmentState: "active",
+	}))
 	if err != nil {
 		return toolError(err)
 	}
 
-	results, err := canvas.SearchCourseWithSmartFallback(ctx, client, course.ID, args.Query)
-	if err != nil {
-		return toolError(err)
+	for _, c := range courses {
+		results, err := canvas.SearchCourseWithSmartFallback(ctx, client, c.ID, args.Query)
+		if err != nil {
+			continue
+		}
+		if len(results) > 0 {
+			allResults = append(allResults, courseSearchResult{
+				Course:  c.CourseCode,
+				Results: results,
+			})
+		}
 	}
 
-	if len(results) == 0 {
+	if len(allResults) == 0 {
 		return mcplib.NewToolResultText("No results found."), nil
 	}
 
-	return jsonResult(results)
+	return jsonResult(allResults)
 }
