@@ -31,6 +31,7 @@ import (
 	opencmd "github.com/chrismdemian/laurus/pkg/cmd/open"
 	pagescmd "github.com/chrismdemian/laurus/pkg/cmd/pages"
 	searchcmd "github.com/chrismdemian/laurus/pkg/cmd/search"
+	setupcmd "github.com/chrismdemian/laurus/pkg/cmd/setup"
 	statuscmd "github.com/chrismdemian/laurus/pkg/cmd/status"
 	submitcmd "github.com/chrismdemian/laurus/pkg/cmd/submit"
 	synccmd "github.com/chrismdemian/laurus/pkg/cmd/sync"
@@ -77,6 +78,15 @@ func init() {
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		// Startup version check (non-blocking, cached)
 		checkUpdateOnStartup(cmd)
+
+		// First-run hint: nudge unconfigured users toward setup
+		if needsSetupHint(cmd) {
+			cfg, err := config.Load()
+			if err == nil && cfg.CanvasURL == "" {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Welcome to Laurus! Run 'laurus setup' to get started.")
+				return fmt.Errorf("not configured; run 'laurus setup' first")
+			}
+		}
 
 		if reset, _ := cmd.Flags().GetBool("reset-cache"); reset {
 			dir, err := config.Dir()
@@ -135,7 +145,7 @@ func init() {
 			return nil, err
 		}
 		if cfg.CanvasURL == "" {
-			return nil, fmt.Errorf("not logged in; run 'laurus auth login' first")
+			return nil, fmt.Errorf("not logged in; run 'laurus setup' to get started")
 		}
 		td, err := f.Auth(cfg.CanvasURL)
 		if err != nil {
@@ -188,12 +198,27 @@ func init() {
 	rootCmd.AddCommand(pagescmd.NewCmdPages(f))
 	rootCmd.AddCommand(pagescmd.NewCmdPage(f))
 	rootCmd.AddCommand(searchcmd.NewCmdSearch(f))
+	rootCmd.AddCommand(setupcmd.NewCmdSetup(f))
 	rootCmd.AddCommand(statuscmd.NewCmdStatus(f))
 	rootCmd.AddCommand(submitcmd.NewCmdSubmit(f))
 	rootCmd.AddCommand(synccmd.NewCmdSync(f))
 	rootCmd.AddCommand(todocmd.NewCmdTodo(f))
 	rootCmd.AddCommand(updatecmd.NewCmdUpdate(f))
 	rootCmd.AddCommand(watchcmd.NewCmdWatch(f))
+}
+
+// needsSetupHint returns true for commands that require configuration.
+// Commands like setup, auth, version, completion, doctor, mcp, and help work without config.
+func needsSetupHint(cmd *cobra.Command) bool {
+	switch cmd.Name() {
+	case "setup", "auth", "login", "version", "completion", "doctor", "mcp", "help", "update":
+		return false
+	}
+	// Also skip for the root command (shows help)
+	if !cmd.HasParent() {
+		return false
+	}
+	return true
 }
 
 // checkUpdateOnStartup prints a notice if a newer version is cached.
