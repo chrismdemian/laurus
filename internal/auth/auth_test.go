@@ -11,7 +11,9 @@ func TestDaysRemaining(t *testing.T) {
 		expiresAt time.Time
 		want      int
 	}{
-		{"30 days out", time.Now().Add(30 * 24 * time.Hour), 30},
+		// Add 1h buffer to avoid truncation flake when nanoseconds elapse between
+		// test setup and time.Until() call inside DaysRemaining.
+		{"30 days out", time.Now().Add(30*24*time.Hour + time.Hour), 30},
 		{"1 hour out", time.Now().Add(1 * time.Hour), 0},
 		{"zero time", time.Time{}, -1},
 		{"already expired", time.Now().Add(-24 * time.Hour), 0},
