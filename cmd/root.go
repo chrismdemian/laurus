@@ -20,6 +20,7 @@ import (
 	calendarcmd "github.com/chrismdemian/laurus/pkg/cmd/calendar"
 	completioncmd "github.com/chrismdemian/laurus/pkg/cmd/completion"
 	coursescmd "github.com/chrismdemian/laurus/pkg/cmd/courses"
+	daemoncmd "github.com/chrismdemian/laurus/pkg/cmd/daemon"
 	discussionscmd "github.com/chrismdemian/laurus/pkg/cmd/discussions"
 	doctorcmd "github.com/chrismdemian/laurus/pkg/cmd/doctor"
 	filescmd "github.com/chrismdemian/laurus/pkg/cmd/files"
@@ -180,6 +181,7 @@ func init() {
 	rootCmd.AddCommand(completioncmd.NewCmdCompletion(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourses(f))
 	rootCmd.AddCommand(coursescmd.NewCmdCourse(f))
+	rootCmd.AddCommand(daemoncmd.NewCmdDaemon(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdDiscussions(f))
 	rootCmd.AddCommand(doctorcmd.NewCmdDoctor(f))
 	rootCmd.AddCommand(discussionscmd.NewCmdDiscussion(f))
@@ -213,7 +215,7 @@ func init() {
 func needsSetupHint(cmd *cobra.Command) bool {
 	noAuthCmds := map[string]bool{
 		"setup": true, "auth": true, "version": true, "completion": true,
-		"doctor": true, "mcp": true, "help": true, "update": true,
+		"daemon": true, "doctor": true, "mcp": true, "help": true, "update": true,
 	}
 	for c := cmd; c != nil; c = c.Parent() {
 		if noAuthCmds[c.Name()] {

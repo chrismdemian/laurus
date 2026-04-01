@@ -93,6 +93,21 @@ func NewClient(baseURL, token, version string) *Client {
 	}
 }
 
+// NewClientWithGraphQL creates a Canvas API client with GraphQL always enabled,
+// regardless of environment variables. Used for benchmarking GraphQL vs REST.
+func NewClientWithGraphQL(baseURL, token, version string) *Client {
+	c := NewClient(baseURL, token, version)
+	if !c.gqlEnabled {
+		c.gqlEnabled = true
+		c.gqlClient = gql.NewClient(baseURL+"/api/graphql", c.httpClient).
+			WithRequestModifier(func(r *http.Request) {
+				r.Header.Set("Authorization", "Bearer "+token)
+				r.Header.Set("User-Agent", "Laurus/"+version)
+			})
+	}
+	return c
+}
+
 func isGraphQLEnabledEnv() bool {
 	if envTruthy("LAURUS_DISABLE_GRAPHQL") {
 		return false

@@ -30,22 +30,19 @@ Works with any Canvas instance. Laurus is Latin for "laurel", the tree of academ
 
 ## Install
 
-Coming soon. Laurus will be available via:
-
 ```bash
 # macOS
 brew install chrismdemian/tap/laurus
 
 # Windows
+scoop bucket add laurus https://github.com/chrismdemian/scoop-bucket
 scoop install laurus
-winget install chrismdemian.laurus
 
-# Linux / macOS / WSL
-curl -fsSL https://laurus.dev/install.sh | sh
-
-# From source
+# From source (requires Go 1.26+)
 go install github.com/chrismdemian/laurus@latest
 ```
+
+Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](https://github.com/chrismdemian/laurus/releases) page.
 
 ---
 
@@ -130,7 +127,7 @@ laurus mcp serve
 }
 ```
 
-Now your AI assistant can check deadlines, read assignments, look up grades, and submit homework on your behalf.
+Works with Claude Desktop, Claude Code, Symphony, Cursor, and any MCP-compatible client. The same config format applies to all of them.
 
 ### Grade Calculator
 
@@ -162,6 +159,23 @@ command = "laurus status --short"
 format = "[$output]($style) "
 style = "yellow"
 interval = 300
+```
+
+```bash
+# ~/.tmux.conf
+set -g status-right '#(laurus status --short)'
+set -g status-interval 300
+```
+
+### Background Notifications
+
+Get desktop notifications for new grades, announcements, and upcoming deadlines.
+
+```bash
+laurus daemon install              # install background polling (systemd/launchd/Task Scheduler)
+laurus daemon status               # check if it's running
+laurus daemon uninstall            # remove it
+laurus watch                       # or run manually in the foreground
 ```
 
 ---
@@ -204,21 +218,21 @@ Laurus covers the full Canvas student API surface:
 
 | Category | Endpoints | Status |
 |----------|-----------|--------|
-| Courses | List, details, syllabus, people | Coming soon |
-| Assignments | List, view, submit, rubrics | Coming soon |
-| Grades | Current/final, weighted, what-if | Coming soon |
-| Modules | List, tree view, completion tracking | Coming soon |
-| Files | Browse, download, sync | Coming soon |
-| Announcements | List, filter, unread | Coming soon |
-| Discussions | List, read threads, post replies | Coming soon |
-| Calendar | Events, deadlines, iCal export | Coming soon |
-| Inbox | Read, send, reply | Coming soon |
-| Planner | Todo items, mark complete | Coming soon |
-| Quizzes | View details, results | Coming soon |
-| Groups | List, files, discussions | Coming soon |
-| Search | AI-powered Smart Search | Coming soon |
-| Analytics | Activity stats, history | Coming soon |
-| Office Hours | View slots, book appointments | Coming soon |
+| Courses | List, details, syllabus, people | Done |
+| Assignments | List, view, submit, rubrics | Done |
+| Grades | Current/final, weighted, what-if | Done |
+| Modules | List, tree view, completion tracking | Done |
+| Files | Browse, download, sync | Done |
+| Announcements | List, filter, unread | Done |
+| Discussions | List, read threads, post replies | Done |
+| Calendar | Events, deadlines, iCal export | Done |
+| Inbox | Read, send, reply | Done |
+| Planner | Todo items, mark complete | Done |
+| Quizzes | View details, results | Done |
+| Groups | List, files, discussions | Done |
+| Search | AI-powered Smart Search | Done |
+| Analytics | Activity stats, history | Done |
+| Office Hours | View slots, book appointments | Done |
 
 ---
 

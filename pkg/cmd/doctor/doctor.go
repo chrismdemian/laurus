@@ -34,15 +34,25 @@ type checkResult struct {
 
 // NewCmdDoctor returns the doctor command.
 func NewCmdDoctor(f *cmdutil.Factory) *cobra.Command {
+	var benchmark bool
+
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Diagnose common issues",
-		Long:  "Run diagnostic checks on your Laurus configuration, authentication, cache, and Canvas connectivity.",
-		Args:  cobra.NoArgs,
+		Long: `Run diagnostic checks on your Laurus configuration, authentication, cache, and Canvas connectivity.
+
+Use --benchmark to compare GraphQL vs REST API performance on your Canvas instance.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if benchmark {
+				return benchmarkRun(f)
+			}
 			return doctorRun(f)
 		},
 	}
+
+	cmd.Flags().BoolVar(&benchmark, "benchmark", false, "Benchmark GraphQL vs REST performance")
+
 	return cmd
 }
 
@@ -249,6 +259,175 @@ func doctorRun(f *cmdutil.Factory) error {
 	} else {
 		_, _ = fmt.Fprintln(ios.ErrOut, "All checks passed.")
 	}
+
+	return nil
+}
+
+func benchmarkRun(f *cmdutil.Factory) error {
+	ios := f.IOStreams()
+
+	cfg, err := f.Config()
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	if cfg.CanvasURL == "" {
+		return fmt.Errorf("not configured; run 'laurus setup' first")
+	}
+	td, err := f.Auth(cfg.CanvasURL)
+	if err != nil {
+		return fmt.Errorf("auth failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(ios.Out, "Benchmarking GraphQL vs REST on %s...\n\n", cfg.CanvasURL)
+
+	// REST client (GraphQL disabled)
+	restClient := canvas.NewClient(cfg.CanvasURL, td.Token, f.Version)
+
+	// GraphQL client (GraphQL enabled) — requires manual enable since env var may not be set
+	gqlClient := canvas.NewClientWithGraphQL(cfg.CanvasURL, td.Token, f.Version)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	type benchResult struct {
+		Name     string
+		REST     time.Duration
+		GraphQL  time.Duration
+		RESTErr  error
+		GQLErr   error
+		RESTRows int
+		GQLRows  int
+	}
+
+	var results []benchResult
+
+	// Benchmark 1: List courses
+	{
+		var r benchResult
+		r.Name = "List courses + enrollments"
+
+		start := time.Now()
+		for c, err := range canvas.ListCourses(ctx, restClient, canvas.CourseListOptions{
+			EnrollmentState: "active",
+		}) {
+			if err != nil {
+				r.RESTErr = err
+				break
+			}
+			_ = c
+			r.RESTRows++
+		}
+		r.REST = time.Since(start)
+
+		start = time.Now()
+		courses, gqlErr := canvas.QueryCourseSummariesGraphQL(ctx, gqlClient, canvas.GraphQLCourseListOptions{})
+		r.GraphQL = time.Since(start)
+		r.GQLErr = gqlErr
+		r.GQLRows = len(courses)
+		results = append(results, r)
+	}
+
+	// Benchmark 2: Dashboard assignments (all courses)
+	{
+		var r benchResult
+		r.Name = "Dashboard assignments"
+
+		start := time.Now()
+		for c, err := range canvas.ListCourses(ctx, restClient, canvas.CourseListOptions{
+			EnrollmentState: "active",
+		}) {
+			if err != nil {
+				r.RESTErr = err
+				break
+			}
+			for a, err := range canvas.ListAssignments(ctx, restClient, c.ID, canvas.ListAssignmentsOptions{
+				Bucket: "upcoming",
+			}) {
+				if err != nil {
+					break
+				}
+				_ = a
+				r.RESTRows++
+			}
+		}
+		r.REST = time.Since(start)
+
+		start = time.Now()
+		dashCourses, gqlErr := canvas.QueryDashboardAssignmentsGraphQL(ctx, gqlClient)
+		r.GraphQL = time.Since(start)
+		r.GQLErr = gqlErr
+		for _, dc := range dashCourses {
+			r.GQLRows += len(dc.Assignments)
+		}
+		results = append(results, r)
+	}
+
+	// Benchmark 3: Grade breakdown for first course
+	{
+		var r benchResult
+		r.Name = "Grade breakdown (1 course)"
+
+		var firstCourseID int64
+		for c, err := range canvas.ListCourses(ctx, restClient, canvas.CourseListOptions{
+			EnrollmentState: "active",
+		}) {
+			if err != nil {
+				break
+			}
+			firstCourseID = c.ID
+			break
+		}
+
+		if firstCourseID > 0 {
+			start := time.Now()
+			for ag, err := range canvas.ListAssignmentGroups(ctx, restClient, firstCourseID, []string{"assignments", "submission"}) {
+				if err != nil {
+					r.RESTErr = err
+					break
+				}
+				r.RESTRows += len(ag.Assignments)
+			}
+			r.REST = time.Since(start)
+
+			start = time.Now()
+			groups, gqlErr := canvas.QueryCourseGradesGraphQL(ctx, gqlClient, firstCourseID)
+			r.GraphQL = time.Since(start)
+			r.GQLErr = gqlErr
+			for _, g := range groups {
+				r.GQLRows += len(g.Assignments)
+			}
+		} else {
+			r.RESTErr = fmt.Errorf("no active courses")
+			r.GQLErr = fmt.Errorf("no active courses")
+		}
+		results = append(results, r)
+	}
+
+	// Print results
+	_, _ = fmt.Fprintf(ios.Out, "%-35s %12s %12s %8s %8s\n", "Query", "REST", "GraphQL", "REST #", "GQL #")
+	_, _ = fmt.Fprintf(ios.Out, "%-35s %12s %12s %8s %8s\n", "-----", "----", "-------", "------", "-----")
+	for _, r := range results {
+		restStr := r.REST.Round(time.Millisecond).String()
+		gqlStr := r.GraphQL.Round(time.Millisecond).String()
+		if r.RESTErr != nil {
+			restStr = "error"
+		}
+		if r.GQLErr != nil {
+			gqlStr = "error"
+		}
+		_, _ = fmt.Fprintf(ios.Out, "%-35s %12s %12s %8d %8d\n", r.Name, restStr, gqlStr, r.RESTRows, r.GQLRows)
+	}
+
+	_, _ = fmt.Fprintln(ios.Out)
+
+	// Check for errors
+	for _, r := range results {
+		if r.GQLErr != nil {
+			_, _ = fmt.Fprintf(ios.ErrOut, "GraphQL error in %q: %v\n", r.Name, r.GQLErr)
+		}
+	}
+
+	_, _ = fmt.Fprintln(ios.Out, "To enable GraphQL by default: export LAURUS_ENABLE_GRAPHQL=1")
 
 	return nil
 }

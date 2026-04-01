@@ -4,6 +4,7 @@ package open
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
@@ -15,10 +16,13 @@ import (
 // NewCmdOpen returns the open command.
 func NewCmdOpen(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "open <course> [assignment]",
+		Use:   "open <course|url> [assignment]",
 		Short: "Open a course or assignment in your browser",
-		Long:  "Open a Canvas course page or specific assignment in your default browser.",
-		Args:  cobra.RangeArgs(1, 2),
+		Long: `Open a Canvas course page or specific assignment in your default browser.
+
+If the first argument is a URL (http:// or https://), it is opened directly.
+This is useful as a fallback for complex Canvas content.`,
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			assignment := ""
 			if len(args) > 1 {
@@ -31,6 +35,13 @@ func NewCmdOpen(f *cmdutil.Factory) *cobra.Command {
 }
 
 func openRun(f *cmdutil.Factory, courseQuery, assignmentQuery string) error {
+	// Direct URL fallback: if the argument is a URL, open it directly.
+	if strings.HasPrefix(courseQuery, "http://") || strings.HasPrefix(courseQuery, "https://") {
+		ios := f.IOStreams()
+		_, _ = fmt.Fprintf(ios.Out, "Opening %s in browser...\n", courseQuery)
+		return browser.OpenURL(courseQuery)
+	}
+
 	client, err := f.Client()
 	if err != nil {
 		return err
