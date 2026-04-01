@@ -48,7 +48,7 @@ laurus/
 
 ## Key Design Decisions
 
-- **GraphQL for reads, REST for writes**: GraphQL for bulk data (courses + assignments + submissions in one call), REST for mutations and file uploads
+- **Per-operation GraphQL**: GraphQL only for single-course grade queries (one round-trip for groups→assignments→submissions); REST for everything else (server-side filtering makes it faster for course/assignment listing). REST always for writes and file uploads.
 - **SQLite cache with WAL**: Enables concurrent reads (CLI) while background sync writes
 - **OS keychain for tokens**: Never plaintext config files for secrets
 - **Cobra subcommand pattern**: One package per noun (matches gh CLI structure)
