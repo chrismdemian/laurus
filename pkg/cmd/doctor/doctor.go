@@ -280,11 +280,9 @@ func benchmarkRun(f *cmdutil.Factory) error {
 
 	_, _ = fmt.Fprintf(ios.Out, "Benchmarking GraphQL vs REST on %s...\n\n", cfg.CanvasURL)
 
-	// REST client (GraphQL disabled)
-	restClient := canvas.NewClient(cfg.CanvasURL, td.Token, f.Version)
-
-	// GraphQL client (GraphQL enabled) — requires manual enable since env var may not be set
-	gqlClient := canvas.NewClientWithGraphQL(cfg.CanvasURL, td.Token, f.Version)
+	// Single client — GraphQL is always available; REST functions and GraphQL
+	// functions are called independently for benchmarking.
+	client := canvas.NewClient(cfg.CanvasURL, td.Token, f.Version)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -307,7 +305,7 @@ func benchmarkRun(f *cmdutil.Factory) error {
 		r.Name = "List courses + enrollments"
 
 		start := time.Now()
-		for c, err := range canvas.ListCourses(ctx, restClient, canvas.CourseListOptions{
+		for c, err := range canvas.ListCourses(ctx, client, canvas.CourseListOptions{
 			EnrollmentState: "active",
 		}) {
 			if err != nil {
@@ -320,7 +318,7 @@ func benchmarkRun(f *cmdutil.Factory) error {
 		r.REST = time.Since(start)
 
 		start = time.Now()
-		courses, gqlErr := canvas.QueryCourseSummariesGraphQL(ctx, gqlClient, canvas.GraphQLCourseListOptions{})
+		courses, gqlErr := canvas.QueryCourseSummariesGraphQL(ctx, client, canvas.GraphQLCourseListOptions{})
 		r.GraphQL = time.Since(start)
 		r.GQLErr = gqlErr
 		r.GQLRows = len(courses)
@@ -333,14 +331,14 @@ func benchmarkRun(f *cmdutil.Factory) error {
 		r.Name = "Dashboard assignments"
 
 		start := time.Now()
-		for c, err := range canvas.ListCourses(ctx, restClient, canvas.CourseListOptions{
+		for c, err := range canvas.ListCourses(ctx, client, canvas.CourseListOptions{
 			EnrollmentState: "active",
 		}) {
 			if err != nil {
 				r.RESTErr = err
 				break
 			}
-			for a, err := range canvas.ListAssignments(ctx, restClient, c.ID, canvas.ListAssignmentsOptions{
+			for a, err := range canvas.ListAssignments(ctx, client, c.ID, canvas.ListAssignmentsOptions{
 				Bucket: "upcoming",
 			}) {
 				if err != nil {
@@ -353,7 +351,7 @@ func benchmarkRun(f *cmdutil.Factory) error {
 		r.REST = time.Since(start)
 
 		start = time.Now()
-		dashCourses, gqlErr := canvas.QueryDashboardAssignmentsGraphQL(ctx, gqlClient)
+		dashCourses, gqlErr := canvas.QueryDashboardAssignmentsGraphQL(ctx, client)
 		r.GraphQL = time.Since(start)
 		r.GQLErr = gqlErr
 		for _, dc := range dashCourses {
@@ -368,7 +366,7 @@ func benchmarkRun(f *cmdutil.Factory) error {
 		r.Name = "Grade breakdown (1 course)"
 
 		var firstCourseID int64
-		for c, err := range canvas.ListCourses(ctx, restClient, canvas.CourseListOptions{
+		for c, err := range canvas.ListCourses(ctx, client, canvas.CourseListOptions{
 			EnrollmentState: "active",
 		}) {
 			if err != nil {
@@ -380,7 +378,7 @@ func benchmarkRun(f *cmdutil.Factory) error {
 
 		if firstCourseID > 0 {
 			start := time.Now()
-			for ag, err := range canvas.ListAssignmentGroups(ctx, restClient, firstCourseID, []string{"assignments", "submission"}) {
+			for ag, err := range canvas.ListAssignmentGroups(ctx, client, firstCourseID, []string{"assignments", "submission"}) {
 				if err != nil {
 					r.RESTErr = err
 					break
@@ -390,7 +388,7 @@ func benchmarkRun(f *cmdutil.Factory) error {
 			r.REST = time.Since(start)
 
 			start = time.Now()
-			groups, gqlErr := canvas.QueryCourseGradesGraphQL(ctx, gqlClient, firstCourseID)
+			groups, gqlErr := canvas.QueryCourseGradesGraphQL(ctx, client, firstCourseID)
 			r.GraphQL = time.Since(start)
 			r.GQLErr = gqlErr
 			for _, g := range groups {
@@ -427,7 +425,8 @@ func benchmarkRun(f *cmdutil.Factory) error {
 		}
 	}
 
-	_, _ = fmt.Fprintln(ios.Out, "To enable GraphQL by default: export LAURUS_ENABLE_GRAPHQL=1")
+	_, _ = fmt.Fprintln(ios.Out, "GraphQL is used automatically for grade queries (fastest path).")
+	_, _ = fmt.Fprintln(ios.Out, "To disable GraphQL entirely: export LAURUS_DISABLE_GRAPHQL=1")
 
 	return nil
 }

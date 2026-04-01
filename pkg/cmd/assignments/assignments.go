@@ -103,95 +103,52 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 			})
 		}
 	} else {
-		dashboardCourses, gqlErr := canvas.QueryDashboardAssignmentsGraphQL(ctx, client)
-		if gqlErr == nil {
-			courses := make([]canvas.Course, 0, len(dashboardCourses))
-			for _, course := range dashboardCourses {
-				courses = append(courses, course.Course)
-				for _, a := range course.Assignments {
-					items = append(items, assignmentWithCourse{
-						Assignment: a,
-						CourseName: course.Course.CourseCode,
-					})
-				}
+		// All active courses — REST is faster than GraphQL here because the
+		// server filters by bucket/status, avoiding fetching all assignments.
+		var courses []canvas.Course
+		for c, err := range canvas.ListCourses(ctx, client, canvas.CourseListOptions{
+			EnrollmentState: "active",
+		}) {
+			if err != nil {
+				return fmt.Errorf("listing courses: %w", err)
 			}
+			courses = append(courses, c)
+		}
 
-			// Opportunistic cache write for courses.
-			if db, err := f.Cache(); err == nil {
-				courseItems := make([]cache.CacheItem, len(courses))
-				for i, x := range courses {
-					courseItems[i] = cache.CacheItem{ID: x.ID, CourseID: 0, Data: x}
+		// Opportunistic cache write for courses.
+		if db, err := f.Cache(); err == nil {
+			courseItems := make([]cache.CacheItem, len(courses))
+			for i, x := range courses {
+				courseItems[i] = cache.CacheItem{ID: x.ID, CourseID: 0, Data: x}
+			}
+			_ = db.UpsertMany(cache.ResourceCourses, courseItems)
+			_ = db.SetSyncMeta(cache.ResourceCourses, 0, len(courseItems), "success")
+		}
+
+		for _, course := range courses {
+			var courseAssignments []canvas.Assignment
+			for a, err := range canvas.ListAssignments(ctx, client, course.ID, canvas.ListAssignmentsOptions{
+				Include: []string{"submission"},
+				OrderBy: "due_at",
+			}) {
+				if err != nil {
+					return fmt.Errorf("listing assignments for %s: %w", course.CourseCode, err)
 				}
-				_ = db.UpsertMany(cache.ResourceCourses, courseItems)
-				_ = db.SetSyncMeta(cache.ResourceCourses, 0, len(courseItems), "success")
+				courseAssignments = append(courseAssignments, a)
+				items = append(items, assignmentWithCourse{
+					Assignment: a,
+					CourseName: course.CourseCode,
+				})
 			}
 
 			// Opportunistic cache write for assignments.
 			if db, err := f.Cache(); err == nil {
-				byCourse := make(map[int64][]canvas.Assignment)
-				for _, course := range dashboardCourses {
-					byCourse[course.Course.ID] = append(byCourse[course.Course.ID], course.Assignments...)
+				aItems := make([]cache.CacheItem, len(courseAssignments))
+				for i, x := range courseAssignments {
+					aItems[i] = cache.CacheItem{ID: x.ID, CourseID: course.ID, Data: x}
 				}
-				for courseID, courseAssignments := range byCourse {
-					aItems := make([]cache.CacheItem, len(courseAssignments))
-					for i, x := range courseAssignments {
-						aItems[i] = cache.CacheItem{ID: x.ID, CourseID: courseID, Data: x}
-					}
-					_ = db.UpsertMany(cache.ResourceAssignments, aItems)
-					_ = db.SetSyncMeta(cache.ResourceAssignments, courseID, len(aItems), "success")
-				}
-			}
-		} else {
-			if !canvas.IsGraphQLFallback(gqlErr) {
-				return fmt.Errorf("listing assignments via graphql: %w", gqlErr)
-			}
-
-			// All active courses
-			var courses []canvas.Course
-			for c, err := range canvas.ListCourses(ctx, client, canvas.CourseListOptions{
-				EnrollmentState: "active",
-			}) {
-				if err != nil {
-					return fmt.Errorf("listing courses: %w", err)
-				}
-				courses = append(courses, c)
-			}
-
-			// Opportunistic cache write for courses.
-			if db, err := f.Cache(); err == nil {
-				courseItems := make([]cache.CacheItem, len(courses))
-				for i, x := range courses {
-					courseItems[i] = cache.CacheItem{ID: x.ID, CourseID: 0, Data: x}
-				}
-				_ = db.UpsertMany(cache.ResourceCourses, courseItems)
-				_ = db.SetSyncMeta(cache.ResourceCourses, 0, len(courseItems), "success")
-			}
-
-			for _, course := range courses {
-				var courseAssignments []canvas.Assignment
-				for a, err := range canvas.ListAssignments(ctx, client, course.ID, canvas.ListAssignmentsOptions{
-					Include: []string{"submission"},
-					OrderBy: "due_at",
-				}) {
-					if err != nil {
-						return fmt.Errorf("listing assignments for %s: %w", course.CourseCode, err)
-					}
-					courseAssignments = append(courseAssignments, a)
-					items = append(items, assignmentWithCourse{
-						Assignment: a,
-						CourseName: course.CourseCode,
-					})
-				}
-
-				// Opportunistic cache write for assignments.
-				if db, err := f.Cache(); err == nil {
-					aItems := make([]cache.CacheItem, len(courseAssignments))
-					for i, x := range courseAssignments {
-						aItems[i] = cache.CacheItem{ID: x.ID, CourseID: course.ID, Data: x}
-					}
-					_ = db.UpsertMany(cache.ResourceAssignments, aItems)
-					_ = db.SetSyncMeta(cache.ResourceAssignments, course.ID, len(aItems), "success")
-				}
+				_ = db.UpsertMany(cache.ResourceAssignments, aItems)
+				_ = db.SetSyncMeta(cache.ResourceAssignments, course.ID, len(aItems), "success")
 			}
 		}
 	}

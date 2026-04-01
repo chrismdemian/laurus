@@ -138,48 +138,24 @@ func (s *Server) handleListAssignments(ctx context.Context, _ mcplib.CallToolReq
 			results = append(results, toAssignmentSummary(a, course.CourseCode, course.ID))
 		}
 	} else {
-		// All courses — try GraphQL first
-		dashboardCourses, gqlErr := canvas.QueryDashboardAssignmentsGraphQL(ctx, client)
-		if gqlErr == nil {
-			for _, dc := range dashboardCourses {
-				for _, a := range dc.Assignments {
-					results = append(results, toAssignmentSummary(a, dc.Course.CourseCode, dc.Course.ID))
-				}
-			}
-		} else {
-			if !canvas.IsGraphQLFallback(gqlErr) {
-				return toolError(gqlErr)
-			}
-			// REST fallback
-			courses, err := collectIter(canvas.ListCourses(ctx, client, canvas.CourseListOptions{
-				EnrollmentState: "active",
+		// All courses — REST is faster because the server filters by bucket/status.
+		courses, err := collectIter(canvas.ListCourses(ctx, client, canvas.CourseListOptions{
+			EnrollmentState: "active",
+		}))
+		if err != nil {
+			return toolError(err)
+		}
+		for _, c := range courses {
+			assignments, err := collectIter(canvas.ListAssignments(ctx, client, c.ID, canvas.ListAssignmentsOptions{
+				Include: []string{"submission"},
+				Bucket:  args.Status,
 			}))
 			if err != nil {
-				return toolError(err)
+				continue
 			}
-			for _, c := range courses {
-				assignments, err := collectIter(canvas.ListAssignments(ctx, client, c.ID, canvas.ListAssignmentsOptions{
-					Include: []string{"submission"},
-					Bucket:  args.Status,
-				}))
-				if err != nil {
-					continue
-				}
-				for _, a := range assignments {
-					results = append(results, toAssignmentSummary(a, c.CourseCode, c.ID))
-				}
+			for _, a := range assignments {
+				results = append(results, toAssignmentSummary(a, c.CourseCode, c.ID))
 			}
-		}
-
-		// Apply status filter if GraphQL path was used (it doesn't support bucket)
-		if args.Status != "" && gqlErr == nil {
-			filtered := results[:0]
-			for _, r := range results {
-				if matchesStatus(r.Status, args.Status) {
-					filtered = append(filtered, r)
-				}
-			}
-			results = filtered
 		}
 	}
 
@@ -195,20 +171,6 @@ func (s *Server) handleListAssignments(ctx context.Context, _ mcplib.CallToolReq
 	})
 
 	return jsonResult(results)
-}
-
-func matchesStatus(actual, filter string) bool {
-	switch filter {
-	case "upcoming":
-		return actual == "upcoming"
-	case "overdue":
-		return actual == "overdue" || actual == "missing"
-	case "past":
-		return actual == "graded" || actual == "submitted"
-	case "undated":
-		return true // can't filter locally, return all
-	}
-	return true
 }
 
 type getNextAssignmentArgs struct{}

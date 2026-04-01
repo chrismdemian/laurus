@@ -42,21 +42,15 @@ func (s *Server) handleListCourses(ctx context.Context, _ mcplib.CallToolRequest
 		return toolError(err)
 	}
 
-	gqlOpts := canvas.GraphQLCourseListOptions{All: args.IncludeCompleted}
-	courses, gqlErr := canvas.QueryCourseSummariesGraphQL(ctx, client, gqlOpts)
-	if canvas.IsGraphQLFallback(gqlErr) {
-		opts := canvas.CourseListOptions{
-			Include: []string{"enrollments", "total_scores"},
-		}
-		if !args.IncludeCompleted {
-			opts.EnrollmentState = "active"
-		}
-		courses, err = collectIter(canvas.ListCourses(ctx, client, opts))
-		if err != nil {
-			return toolError(err)
-		}
-	} else if gqlErr != nil {
-		return toolError(gqlErr)
+	opts := canvas.CourseListOptions{
+		Include: []string{"enrollments", "total_scores"},
+	}
+	if !args.IncludeCompleted {
+		opts.EnrollmentState = "active"
+	}
+	courses, err := collectIter(canvas.ListCourses(ctx, client, opts))
+	if err != nil {
+		return toolError(err)
 	}
 
 	type courseSummary struct {

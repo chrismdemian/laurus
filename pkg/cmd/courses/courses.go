@@ -94,21 +94,11 @@ func listRun(cmd *cobra.Command, f *cmdutil.Factory, opts listOpts) error {
 	}
 
 	var courses []canvas.Course
-	courses, err = canvas.QueryCourseSummariesGraphQL(ctx, client, canvas.GraphQLCourseListOptions{
-		All:           opts.All,
-		FavoritesOnly: opts.Favorites,
-	})
-	if err != nil {
-		if !canvas.IsGraphQLFallback(err) {
-			return fmt.Errorf("listing courses via graphql: %w", err)
+	for c, err := range canvas.ListCourses(ctx, client, listOpts) {
+		if err != nil {
+			return fmt.Errorf("listing courses: %w", err)
 		}
-
-		for c, err := range canvas.ListCourses(ctx, client, listOpts) {
-			if err != nil {
-				return fmt.Errorf("listing courses: %w", err)
-			}
-			courses = append(courses, c)
-		}
+		courses = append(courses, c)
 	}
 
 	// Opportunistic cache write.

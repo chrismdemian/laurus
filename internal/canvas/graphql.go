@@ -463,8 +463,8 @@ func QueryDashboardAssignmentsGraphQL(ctx context.Context, c *Client) ([]Dashboa
 		_, err := execGraphQLJSON(ctx, c, "UserDashboardAssignments", userDashboardAssignmentsQuery, map[string]any{
 			"userID":          strconv.FormatInt(userID, 10),
 			"after":           after,
-			"first":           100,
-			"assignmentFirst": 200,
+			"first":           15,
+			"assignmentFirst": 50,
 			"submissionFirst": 2,
 		}, &resp)
 		if err != nil {
@@ -592,8 +592,8 @@ func QueryCourseGradesGraphQL(ctx context.Context, c *Client, courseID int64) ([
 	_, err = execGraphQLJSON(ctx, c, "CourseGrades", courseGradesQuery, map[string]any{
 		"courseID":        strconv.FormatInt(courseID, 10),
 		"userID":          strconv.FormatInt(userID, 10),
-		"groupFirst":      200,
-		"assignmentFirst": 300,
+		"groupFirst":      25,
+		"assignmentFirst": 100,
 		"submissionFirst": 2,
 	}, &resp)
 	if err != nil {
