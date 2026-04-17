@@ -43,8 +43,18 @@ research-*.md
 research/
 .claude/*
 !.claude/rules/
+!.claude/skills/
 !.claude/settings.local.json
 
 # Logs
 *.log
 PHASE_9_PLAN.md
+
+# Course content (not part of the project)
+esc204_course_content/
+esc204_drive/
+phy294_study/
+parse_docs.py
+*.png
+exp*_out.txt
+.golangci.bck.yml
