@@ -1,8 +1,8 @@
 # Laurus — D2L Brightspace Build Plan
 
 > D2L Brightspace as a second LMS backend. Feasibility: **YES**, ~3 weeks of work.
-> Primary access path: session cookie capture → official Valence REST API.
-> Research docs: `research/d2l-01` through `research/d2l-07`.
+> Primary access path: **silent** session cookie read from the user's installed browser →
+> official Valence REST API. Research docs: `research/d2l-01` through `research/d2l-08`.
 
 ## Feasibility Summary
 
@@ -14,12 +14,22 @@ Valence REST API (`/d2l/api/le/...`, `/d2l/api/lp/...`). Confirmed by three inde
 production projects (RohanMuppa MCP, singularity, patrick). This is not scraping — it's
 the real API with alternate auth presentation.
 
-**Primary vector: manual cookie capture.** User pastes two cookie values from DevTools.
-Session lasts ~3 hours default timeout. Tool re-prompts on 401.
+**Primary auth UX: silent browser cookie capture.** Using `github.com/browserutils/kooky`,
+laurus reads the D2L session cookies directly from the user's installed browser's SQLite DB
+(same mechanism yt-dlp uses for `--cookies-from-browser`). User logs into Brightspace once in
+their browser (which they do anyway); `laurus auth add` finds the session in ~0.5 seconds
+with zero interaction. No DevTools, no copy-paste, no popup, no binary bloat.
 
-**Fallback vector to investigate first: Brightspace Pulse APK OAuth client_id extraction.**
+**Fallback for Chrome 127+ on Windows** (which uses App-Bound Encryption that blocks cookie
+DB reads): native WebView2 popup via `jchv/go-webview2` — pure Go, no CGo, WebView2
+preinstalled on Windows 11. User logs in in the popup; we extract the cookie from the
+webview's cookie store. Same outcome, one extra click.
+
+**Phase 0 investigation (still valid): Brightspace Pulse APK OAuth client_id extraction.**
 If the mobile app ships a globally-registered client_id using PKCE, we get durable refresh
-tokens and no session expiry. 2–4 hour investigation gates the auth architecture.
+tokens and no session expiry, bypassing all browser-session complexity. 2–4 hour
+investigation gates the auth architecture. If successful, the cookie/webview flows become
+optional fallbacks rather than the primary path.
 
 ## Key Decisions (locked)
 
@@ -30,6 +40,7 @@ tokens and no session expiry. 2–4 hour investigation gates the auth architectu
 | Cache | **Separate SQLite DB per profile** | Zero migration risk; no ID-collision edge cases; every query works unchanged. |
 | Factory | **Interface refactor** (`cmdutil.Factory.Client` returns `lms.Client` interface) | Eliminates the "most dangerous latent assumption." Pre-req for all D2L work. |
 | CLI UX | **Profile-scoped default** (`laurus next` uses active profile; `--profile` flag for override; `--all` flag for merged view) | Matches `gh auth switch` / `kubectl config use-context` mental model. Preserves sub-100ms cache reads. |
+| Auth UX | **Silent cookie read → WebView2 popup → manual paste** (ordered fallbacks) | kooky works for ~90% of users (Firefox anywhere, Chrome on mac/Linux, Chrome <127 on Win). go-webview2 covers Chrome 127+ Windows. Manual paste is a last-resort escape hatch, not the default. |
 | Grade calculator | **Display D2L's server-computed grades** (no local Kane-Kane) | D2L grade model is categorically different; re-implementing it is a separate 2-week project. What-if simulation deferred. |
 | Write operations | **Read-only for v1** | XSRF token handling adds complexity + TOS exposure. Submissions come in a later phase. |
 | Distribution | **Personal first, then public on Twitter** | Accept DMCA takedown risk. No lawsuit precedent for student LMS tools. |
@@ -74,11 +85,18 @@ Phase 16 (deferred): Write Operations (XSRF + submit assignment + post reply)
 
 | Package | Purpose | Why this one |
 |---|---|---|
-| `golang.org/x/oauth2` | OAuth 2.0 + PKCE | **Only if Phase 0 succeeds.** Standard library-adjacent, battle-tested. |
-| `github.com/go-rod/rod` | Embedded browser | **Only for future Vector B fallback.** Auto-downloads Chromium. NOT needed for v1. |
+| `github.com/browserutils/kooky` | **Read cookies from installed browsers** | Pure Go, MIT, v0.2.9 (Mar 2026). Supports Chrome/Firefox/Edge/Brave/Safari on Windows/macOS/Linux. Handles DPAPI + Keychain + PBKDF2 decryption automatically. Core of the silent-auth flow. |
+| `github.com/jchv/go-webview2` | **Windows WebView2 popup fallback** | Pure Go, no CGo. WebView2 preinstalled on Windows 11 (and ~95% of Win 10). Used only on Windows when Chrome 127+ blocks kooky. Build-tag gated (`//go:build windows`). |
+| `golang.org/x/oauth2` | OAuth 2.0 + PKCE | **Only if Phase 0 Pulse APK succeeds.** If we find a globally-registered Pulse client_id, the entire cookie flow becomes unnecessary and OAuth replaces it. |
 
 Everything else already in `go.mod` (retryablehttp, rate limiter, keyring, TOML, decimal,
-glamour) works for D2L unchanged.
+glamour) works for D2L unchanged. **No embedded Chromium (no go-rod, no playwright-go)** —
+~150MB binary bloat avoided. **No CGo dependencies on Linux** — static binary model preserved.
+
+**macOS native webview (WKWebView) is deliberately skipped** in v1. The kooky path covers
+macOS with any browser (no ABE on macOS); a native webview fallback would require CGo and
+adds distribution complexity for a scenario that should essentially never happen on macOS.
+If reports come in, revisit.
 
 ---
 
@@ -173,18 +191,84 @@ existing single-URL configs transparently.
 
 ## Phase 3: D2L Auth
 
-**Goal**: Store D2L credentials in the keychain. Two implementations depending on Phase 0 outcome.
+**Goal**: Silent cookie capture from the user's installed browser. Store credentials in the
+keychain. No copy-paste UX. Two implementations depending on Phase 0 outcome.
 
-### 3A. Cookie Capture Auth (if OAuth path failed)
+### 3A. Silent Cookie Capture (primary — if Phase 0 OAuth path fails)
 
-- [ ] `internal/auth/d2l_cookie.go`: `StoreCookies(url, session, secure string)`,
-      `LoadCookies(url)` using existing 99designs/keyring
-- [ ] Cookies stored as a single JSON blob per keychain entry: `{"session": "...", "secure": "...", "capturedAt": "..."}`
-- [ ] Capture timestamp used for proactive "session will expire soon" warning at ~4h
-- [ ] On 401 from any D2L API call, surface `AuthExpiredError` that the command layer
-      prompts to re-paste
+**The flow the user sees:**
+```
+$ laurus auth add
+? School URL: https://brightspace.carleton.ca
+  Detecting LMS type... D2L Brightspace confirmed.
+  Searching for Brightspace session in installed browsers...
+  Found active session (Firefox). Testing connection...
+  Authenticated as Jane Smith (jsmith@cmail.carleton.ca)
+  Saved profile "carleton". Session lasts ~3–8 hours.
+```
 
-### 3B. OAuth + PKCE Auth (if Phase 0 succeeded)
+If no session found anywhere: falls through to 3B WebView2 (Windows) or a prompt.
+
+**Implementation:**
+
+- [ ] `internal/auth/d2l_cookie_finder.go` — wraps `kooky.AllCookies`:
+  ```go
+  import (
+      "github.com/browserutils/kooky"
+      _ "github.com/browserutils/kooky/browser/all" // registers Chrome/FF/Edge/Brave/Safari
+  )
+
+  func FindD2LCookies(host string) (session, secure string, err error) {
+      cookies := kooky.AllCookies(
+          kooky.Domain(host),
+          kooky.FilterFunc(func(c *kooky.Cookie) bool {
+              return c.Name == "d2lSessionVal" || c.Name == "d2lSecureSessionVal"
+          }),
+      )
+      // Prefer most recent (largest expires timestamp) if duplicates across browsers
+      // Return session + secure values
+  }
+  ```
+- [ ] **Chrome 127+ App-Bound Encryption detection on Windows.** Before calling kooky,
+      probe `%LOCALAPPDATA%\Google\Chrome\User Data\Local State` for the
+      `app_bound_encrypted_key` field. If present, skip Chrome entirely and try Firefox/Edge
+      (Edge has the same ABE but some users have both Chrome+Firefox installed). kooky may
+      still attempt Chrome and fail silently — defensive skip avoids confusion.
+- [ ] **Browser-specific quirks to handle:**
+  - On Windows, cookie SQLite files are locked while browser is running. kooky handles this
+    via file copy internally, but may intermittently fail if the browser is actively writing.
+    Retry once after 100ms if first read fails.
+  - Firefox profiles live under `~/.mozilla/firefox/*.default-release/cookies.sqlite`. kooky
+    auto-discovers them. If user has multiple profiles, iterate all and pick the one with a
+    `d2lSessionVal` cookie matching the domain.
+  - Safari (macOS) requires Full Disk Access permission granted to the terminal. If kooky
+    returns an empty set from Safari and Safari is the only browser with the session, surface
+    a one-line hint: `"Hint: grant Terminal Full Disk Access in System Settings → Privacy."`
+- [ ] `internal/auth/d2l_store.go` — store validated cookies in keyring:
+  - `StoreCookies(url, session, secure string)` uses 99designs/keyring (already wired for Canvas)
+  - JSON blob per keychain entry: `{"session": "...", "secure": "...", "capturedAt": "..."}`
+  - Timestamp drives a "session will likely expire soon" warning at ~4h age
+- [ ] On 401 from any D2L API call, surface `AuthExpiredError`. Command layer catches and
+      auto-retries `FindD2LCookies` — if the user re-logged in the browser, we pick up the
+      fresh session transparently. If that fails too, prompt re-auth.
+
+### 3B. WebView2 Fallback (Windows only)
+
+Triggered only when 3A finds no session AND user is on Windows AND Chrome/Edge ABE blocks
+the cookie read. Avoids forcing the user to install Firefox.
+
+- [ ] `internal/auth/d2l_webview_windows.go` with `//go:build windows`:
+  - Launch `jchv/go-webview2` window pointed at the D2L login URL
+  - Monitor URL changes; detect successful login by presence of `/d2l/home` in URL
+  - Extract cookies from the webview's own cookie store via WebView2's
+    `CoreWebView2CookieManager` API
+  - Close webview; store cookies normally via 3A's `StoreCookies`
+- [ ] Non-Windows build has a stub that returns `ErrWebviewUnsupported`
+- [ ] Binary size impact: +~2MB on Windows. Zero on macOS/Linux (conditional import).
+
+### 3C. OAuth + PKCE Auth (if Phase 0 Pulse APK succeeds)
+
+Replaces 3A + 3B entirely if the investigation produces a globally-registered client_id.
 
 - [ ] `internal/auth/d2l_oauth.go`: use `golang.org/x/oauth2` + PKCE code verifier
 - [ ] Spin up localhost callback server on random port (`127.0.0.1:0`) during `laurus auth add`
@@ -194,7 +278,14 @@ existing single-URL configs transparently.
       rotate on every exchange, so **persist the new refresh token immediately** after every
       refresh call (mutex-protected to prevent concurrent refresh races)
 
-Whichever path ships: same `lms.Client` interface downstream. Commands don't care.
+### 3D. Manual Paste (ultimate escape hatch)
+
+For users in locked-down enterprise environments where neither cookie DB reads nor WebView2
+are allowed. Not the default UX — only reached via `laurus auth add --manual` flag.
+
+- [ ] Prompts for cookie values from DevTools (old Phase 3A flow, demoted to opt-in)
+
+Whichever path succeeds: same `lms.Client` interface downstream. Commands don't care.
 
 ---
 
@@ -365,17 +456,22 @@ Canvas-shared one.
 - [ ] `laurus auth add` — interactive:
   - Prompts for school URL
   - Detects LMS type: probe `/d2l/api/versions/` (D2L) vs `/api/v1/users/self` (Canvas)
-  - Routes to appropriate auth flow (cookie paste, OAuth redirect, or Canvas token paste)
+  - Canvas path: prompts for token (existing behavior)
+  - D2L path: runs 3A silent cookie find → 3B WebView2 (Win-only) → 3D manual paste, in
+    order, until one succeeds
   - Validates by calling `WhoAmI` and displaying the detected name
   - Saves profile + credentials
 - [ ] `laurus auth status` — shows each profile with last-auth timestamp, session health,
-      "needs refresh?" warning
-- [ ] `laurus auth refresh <profile>` — re-runs the cookie-paste or OAuth flow for a single
-      profile
+      "needs refresh?" warning, and which browser we sourced the cookie from (for D2L)
+- [ ] `laurus auth refresh <profile>` — re-runs the silent cookie find for the profile's URL.
+      If the user re-logged in their browser, this is a one-command no-interaction refresh.
+      Otherwise falls through to webview/paste like the original `add` flow.
 - [ ] `laurus auth rm <profile>` — delete credentials + remove profile entry
 - [ ] Proactive expiry warning: on any command, if stored D2L cookies are >4 hours old,
-      print a one-line warning ("Your Waterloo session will likely expire soon — run
-      `laurus auth refresh waterloo`")
+      print a one-line warning. Offer inline refresh: `"Session likely expired. Refreshing
+      from browser... ✓"` if `FindD2LCookies` succeeds silently, otherwise prompt.
+- [ ] Friendly error message when kooky finds nothing: explain the fallback path clearly,
+      link to a README section, don't leave the user staring at a generic error.
 
 ---
 
@@ -436,7 +532,14 @@ From research — these are real and will bite:
 9. **No unified "assignments" concept.** Coursework is fragmented across dropbox, quizzes,
    discussions, and content topics. `laurus assignments` must aggregate from multiple
    endpoints per course.
-10. **Session cookies expire at ~180min inactivity.** No programmatic refresh. Must re-prompt.
+10. **Session cookies expire at ~180min inactivity.** No programmatic refresh. On expiry,
+    re-read from browser (user may have re-logged in naturally) before prompting.
+11. **Chrome 127+ on Windows uses App-Bound Encryption.** kooky cannot decrypt ABE cookies
+    without admin rights (which laurus will NEVER request). Detect by probing `Local State`
+    for `app_bound_encrypted_key` field and skip Chrome on Windows when present. Fall back to
+    Firefox/Edge read or WebView2 popup.
+12. **Safari requires Full Disk Access on macOS** for its cookie DB to be readable. Surface
+    a hint when kooky returns empty from Safari and Safari is the only candidate browser.
 
 ---
 
