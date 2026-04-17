@@ -16,11 +16,10 @@ Courses, assignments, grades, files, and deadlines - without opening a browser. 
 
 ## What is this?
 
-Laurus is a CLI, TUI, and MCP server for [Canvas LMS](https://www.instructure.com/canvas) -the platform used by thousands of universities. One binary, three modes:
+Laurus is a CLI and MCP server for [Canvas LMS](https://www.instructure.com/canvas) -the platform used by thousands of universities. One binary, two modes:
 
 ```bash
 laurus next                    # CLI: what's due next?
-laurus tui                     # TUI: interactive lazygit-style dashboard
 laurus mcp serve               # MCP: plug into Claude, Symphony, or OpenClaw
 ```
 
@@ -49,8 +48,8 @@ Pre-built binaries for Linux, macOS, and Windows are available on the [Releases]
 ## Quick Start
 
 ```bash
-# 1. Authenticate with your Canvas instance
-laurus auth login
+# 1. First-run setup (prompts for Canvas URL + API token)
+laurus setup
 
 # 2. See what's due
 laurus next
@@ -58,8 +57,8 @@ laurus next
 # 3. Check your grades
 laurus grades
 
-# 4. Launch the interactive dashboard
-laurus tui
+# 4. Plug into Claude / Symphony / Cursor (see MCP section below)
+laurus mcp serve
 ```
 
 ---
@@ -77,35 +76,13 @@ The daily drivers. Fast, scriptable, pipe-friendly.
 | `laurus grades` | Current grades across all courses |
 | `laurus grades --what-if "CSC108:85"` | Simulate final grades |
 | `laurus announcements` | Recent announcements across all courses |
-| `laurus files sync` | Sync all course files locally |
+| `laurus sync` | Sync Canvas data + course files to local cache |
 | `laurus submit <course> <assignment> <file>` | Submit from the terminal |
 | `laurus calendar --export` | Export deadlines to `.ics` |
 | `laurus inbox` | Read and send Canvas messages |
 | `laurus search <query>` | AI-powered semantic search across courses |
 
 Every command supports `--json` for scripting and `--cached` for offline use.
-
-### TUI Mode
-
-A lazygit-style interactive terminal dashboard. Navigate courses, browse assignments, check grades, read announcements -all with vim keybindings.
-
-```
-laurus tui
-```
-
-```
-┌─ Courses ──────────┬─ Assignments ──────────────┬─ Details ─────────────────┐
-│                    │                            │                           │
-│ > CSC108           │   Assignment 3             │  Binary Search Trees      │
-│   MAT137           │   Problem Set 7            │                           │
-│   ECE253           │ > Lab Report 4             │  Due: Tomorrow 11:59 PM   │
-│   PHY180           │   Reading Response 6       │  Points: 40               │
-│   ENG195           │                            │  Submitted: No            │
-│                    │                            │                           │
-├────────────────────┴────────────────────────────┤  Rubric:                  │
-│  Status: 3 due this week | 1 overdue | 2 unread │  - Correctness (20)       │
-└─────────────────────────────────────────────────┴───────────────────────────┘
-```
 
 ### MCP Server Mode
 
@@ -185,10 +162,10 @@ laurus watch                       # or run manually in the foreground
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    laurus binary                    │
-├────────────┬──────────────┬──────────┬──────────────┤
-│  CLI Mode  │   TUI Mode   │ MCP Mode │  Daemon Mode │
-│  (cobra)   │  (bubbletea) │ (mcp-go) │ (background) │
-├────────────┴──────────────┴──────────┴──────────────┤
+├───────────────┬──────────────────┬──────────────────┤
+│    CLI Mode   │     MCP Mode     │   Daemon Mode    │
+│    (cobra)    │     (mcp-go)     │   (background)   │
+├───────────────┴──────────────────┴──────────────────┤
 │                    Core Library                     │
 │                                                     │
 │  ┌──────────┐   ┌───────────┐   ┌────────────────┐  │
@@ -239,12 +216,14 @@ Laurus covers the full Canvas student API surface:
 ## Configuration
 
 ```bash
-laurus auth login
-# Opens Canvas in your browser → paste your API token
-# Token stored in OS keychain, never in plaintext
+laurus setup
+# Prompts for Canvas URL, opens browser with token instructions, stores token in OS keychain
 ```
 
-Config lives at `~/.config/laurus/config.toml`:
+Config lives in your OS config directory:
+- **Linux**: `~/.config/laurus/config.toml`
+- **macOS**: `~/Library/Application Support/laurus/config.toml`
+- **Windows**: `%AppData%\laurus\config.toml`
 
 ```toml
 [canvas]

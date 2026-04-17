@@ -41,6 +41,7 @@ brews:
   - repository:
       owner: chrismdemian
       name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/chrismdemian/laurus"
     description: "Laurus — Canvas LMS from your terminal"
     license: "Apache-2.0"
@@ -49,6 +50,7 @@ scoops:
   - repository:
       owner: chrismdemian
       name: scoop-bucket
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/chrismdemian/laurus"
     description: "Laurus — Canvas LMS from your terminal"
     license: "Apache-2.0"
