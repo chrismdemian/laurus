@@ -72,20 +72,21 @@ func syncRun(f *cmdutil.Factory, courseQuery string) error {
 		Include:         []string{"enrollments", "total_scores"},
 	}) {
 		if err != nil {
+			// A truncated course list is not a usable root set; stop rather
+			// than sync (and prune) against half of it.
 			return fmt.Errorf("listing courses: %w", err)
 		}
 		courses = append(courses, c)
 	}
 
-	// Cache courses.
+	// Cache courses (one transaction: upsert, prune, stamp).
 	items := make([]cache.CacheItem, len(courses))
 	for i, c := range courses {
 		items[i] = cache.CacheItem{ID: c.ID, CourseID: 0, Data: c}
 	}
-	if err := db.UpsertMany(cache.ResourceCourses, items); err != nil {
+	if _, err := db.ReplaceAll(cache.ResourceCourses, 0, items, cache.ReplaceOptions{}); err != nil {
 		return fmt.Errorf("caching courses: %w", err)
 	}
-	_ = db.SetSyncMeta(cache.ResourceCourses, 0, len(courses), "success")
 	_, _ = fmt.Fprintf(ios.ErrOut, "  %-12s  %-20s  %d items\n", "all", "courses", len(courses))
 
 	// Filter to specific course if requested.
@@ -160,8 +161,13 @@ func syncCourse(ctx context.Context, client *canvas.Client, db *cache.DB, course
 		var assignments []cache.CacheItem
 		var submissions []cache.CacheItem
 
+		var truncated bool
 		for ag, err := range canvas.ListAssignmentGroups(ctx, client, course.ID, []string{"assignments", "submission"}) {
 			if err != nil {
+				if errors.Is(err, canvas.ErrPaginationTruncated) {
+					truncated = true
+					break
+				}
 				return 0, err
 			}
 			groups = append(groups, cache.CacheItem{ID: ag.ID, CourseID: course.ID, Data: ag})
@@ -176,82 +182,77 @@ func syncCourse(ctx context.Context, client *canvas.Client, db *cache.DB, course
 			}
 		}
 
-		if err := db.UpsertMany(cache.ResourceAssignmentGroups, groups); err != nil {
-			return 0, err
-		}
-		_ = db.SetSyncMeta(cache.ResourceAssignmentGroups, course.ID, len(groups), "success")
-
-		if err := db.UpsertMany(cache.ResourceAssignments, assignments); err != nil {
-			return 0, err
-		}
-		_ = db.SetSyncMeta(cache.ResourceAssignments, course.ID, len(assignments), "success")
-
-		// Prune assignments that no longer exist.
-		aIDs := make([]int64, len(assignments))
-		for i, a := range assignments {
-			aIDs[i] = a.ID
-		}
-		_ = db.Prune(cache.ResourceAssignments, course.ID, aIDs)
-
-		if len(submissions) > 0 {
-			if err := db.UpsertMany(cache.ResourceSubmissions, submissions); err != nil {
+		// One fetch fills three tables; they are replaced together with the
+		// same truncation flag so a partial page can never prune any of them.
+		opts := cache.ReplaceOptions{Truncated: truncated}
+		for rt, items := range map[cache.ResourceType][]cache.CacheItem{
+			cache.ResourceAssignmentGroups: groups,
+			cache.ResourceAssignments:      assignments,
+			cache.ResourceSubmissions:      submissions,
+		} {
+			if _, err := db.ReplaceAll(rt, course.ID, items, opts); err != nil {
 				return 0, err
 			}
-			_ = db.SetSyncMeta(cache.ResourceSubmissions, course.ID, len(submissions), "success")
 		}
-
+		if truncated {
+			return len(groups) + len(assignments) + len(submissions), fmt.Errorf("%w; cached set kept, marked suspect", canvas.ErrPaginationTruncated)
+		}
 		return len(groups) + len(assignments) + len(submissions), nil
 	})
 
 	// Announcements.
 	syncResource(ctx, results, code, "announcements", func() (int, error) {
 		var items []cache.CacheItem
+		var truncated bool
 		contextCode := fmt.Sprintf("course_%d", course.ID)
 		for a, err := range canvas.ListAnnouncements(ctx, client, canvas.ListAnnouncementsOptions{
 			ContextCodes: []string{contextCode},
 			StartDate:    "2000-01-01",
 		}) {
 			if err != nil {
+				if errors.Is(err, canvas.ErrPaginationTruncated) {
+					truncated = true
+					break
+				}
 				return 0, err
 			}
-			courseID := parseCourseIDFromContextCode(a.ContextCode)
-			items = append(items, cache.CacheItem{ID: a.ID, CourseID: courseID, Data: a})
+			items = append(items, cache.CacheItem{ID: a.ID, CourseID: course.ID, Data: a})
 		}
-
-		if err := db.UpsertMany(cache.ResourceAnnouncements, items); err != nil {
-			return 0, err
-		}
-		_ = db.SetSyncMeta(cache.ResourceAnnouncements, course.ID, len(items), "success")
-		return len(items), nil
+		return replaceJob(db, cache.ResourceAnnouncements, course.ID, items, truncated)
 	})
 
 	// Discussion topics.
 	syncResource(ctx, results, code, "discussions", func() (int, error) {
 		var items []cache.CacheItem
+		var truncated bool
 		for d, err := range canvas.ListDiscussionTopics(ctx, client, course.ID, canvas.ListDiscussionTopicsOptions{}) {
 			if err != nil {
+				if errors.Is(err, canvas.ErrPaginationTruncated) {
+					truncated = true
+					break
+				}
 				return 0, err
 			}
 			items = append(items, cache.CacheItem{ID: d.ID, CourseID: course.ID, Data: d})
 		}
-
-		if err := db.UpsertMany(cache.ResourceDiscussions, items); err != nil {
-			return 0, err
-		}
-		_ = db.SetSyncMeta(cache.ResourceDiscussions, course.ID, len(items), "success")
-		return len(items), nil
+		return replaceJob(db, cache.ResourceDiscussions, course.ID, items, truncated)
 	})
 
 	// Modules (with items + content details).
 	syncResource(ctx, results, code, "modules", func() (int, error) {
 		var mods []cache.CacheItem
 		var modItems []cache.CacheItem
+		var truncated bool
 
 		for m, err := range canvas.ListModules(ctx, client, course.ID, canvas.ListModulesOptions{
 			IncludeItems:          true,
 			IncludeContentDetails: true,
 		}) {
 			if err != nil {
+				if errors.Is(err, canvas.ErrPaginationTruncated) {
+					truncated = true
+					break
+				}
 				return 0, err
 			}
 			mods = append(mods, cache.CacheItem{ID: m.ID, CourseID: course.ID, Data: m})
@@ -260,85 +261,93 @@ func syncCourse(ctx context.Context, client *canvas.Client, db *cache.DB, course
 			}
 		}
 
-		if err := db.UpsertMany(cache.ResourceModules, mods); err != nil {
+		opts := cache.ReplaceOptions{Truncated: truncated}
+		if _, err := db.ReplaceAll(cache.ResourceModules, course.ID, mods, opts); err != nil {
 			return 0, err
 		}
-		_ = db.SetSyncMeta(cache.ResourceModules, course.ID, len(mods), "success")
-
-		if len(modItems) > 0 {
-			if err := db.UpsertMany(cache.ResourceModuleItems, modItems); err != nil {
-				return 0, err
-			}
-			_ = db.SetSyncMeta(cache.ResourceModuleItems, course.ID, len(modItems), "success")
+		if _, err := db.ReplaceAll(cache.ResourceModuleItems, course.ID, modItems, opts); err != nil {
+			return 0, err
 		}
-
+		if truncated {
+			return len(mods) + len(modItems), fmt.Errorf("%w; cached set kept, marked suspect", canvas.ErrPaginationTruncated)
+		}
 		return len(mods) + len(modItems), nil
 	})
 
 	// Pages (handle 404/403 gracefully — Pages tab may be disabled).
 	syncResource(ctx, results, code, "pages", func() (int, error) {
 		var items []cache.CacheItem
+		var truncated bool
 		for p, err := range canvas.ListPages(ctx, client, course.ID, canvas.ListPagesOptions{}) {
 			if err != nil {
 				if errors.Is(err, canvas.ErrNotFound) || errors.Is(err, canvas.ErrForbidden) {
-					_ = db.SetSyncMeta(cache.ResourcePages, course.ID, 0, "skipped")
-					return 0, nil // not an error — just disabled
+					return 0, db.SetSyncMeta(cache.ResourcePages, course.ID, 0, cache.StatusSkipped) // disabled, not an error
+				}
+				if errors.Is(err, canvas.ErrPaginationTruncated) {
+					truncated = true
+					break
 				}
 				return 0, err
 			}
 			items = append(items, cache.CacheItem{ID: p.PageID, CourseID: course.ID, Data: p})
 		}
-
-		if err := db.UpsertMany(cache.ResourcePages, items); err != nil {
-			return 0, err
-		}
-		_ = db.SetSyncMeta(cache.ResourcePages, course.ID, len(items), "success")
-		return len(items), nil
+		return replaceJob(db, cache.ResourcePages, course.ID, items, truncated)
 	})
 
 	// Files metadata (handle 403 gracefully — Files tab may be restricted).
 	syncResource(ctx, results, code, "files", func() (int, error) {
 		var fileItems []cache.CacheItem
+		var truncated bool
 		for f, err := range canvas.ListFiles(ctx, client, course.ID, canvas.ListFilesOptions{}) {
 			if err != nil {
 				if errors.Is(err, canvas.ErrForbidden) {
-					_ = db.SetSyncMeta(cache.ResourceFiles, course.ID, 0, "skipped")
-					return 0, nil
+					return 0, db.SetSyncMeta(cache.ResourceFiles, course.ID, 0, cache.StatusSkipped)
+				}
+				if errors.Is(err, canvas.ErrPaginationTruncated) {
+					truncated = true
+					break
 				}
 				return 0, err
 			}
 			fileItems = append(fileItems, cache.CacheItem{ID: f.ID, CourseID: course.ID, Data: f})
 		}
-
-		if err := db.UpsertMany(cache.ResourceFiles, fileItems); err != nil {
-			return 0, err
-		}
-		_ = db.SetSyncMeta(cache.ResourceFiles, course.ID, len(fileItems), "success")
-		return len(fileItems), nil
+		return replaceJob(db, cache.ResourceFiles, course.ID, fileItems, truncated)
 	})
 
 	// Folders (handle 403 gracefully).
 	syncResource(ctx, results, code, "folders", func() (int, error) {
 		var items []cache.CacheItem
+		var truncated bool
 		for f, err := range canvas.ListFolders(ctx, client, course.ID) {
 			if err != nil {
 				if errors.Is(err, canvas.ErrForbidden) {
-					_ = db.SetSyncMeta(cache.ResourceFolders, course.ID, 0, "skipped")
-					return 0, nil
+					return 0, db.SetSyncMeta(cache.ResourceFolders, course.ID, 0, cache.StatusSkipped)
+				}
+				if errors.Is(err, canvas.ErrPaginationTruncated) {
+					truncated = true
+					break
 				}
 				return 0, err
 			}
 			items = append(items, cache.CacheItem{ID: f.ID, CourseID: course.ID, Data: f})
 		}
-
-		if err := db.UpsertMany(cache.ResourceFolders, items); err != nil {
-			return 0, err
-		}
-		_ = db.SetSyncMeta(cache.ResourceFolders, course.ID, len(items), "success")
-		return len(items), nil
+		return replaceJob(db, cache.ResourceFolders, course.ID, items, truncated)
 	})
 
 	return nil
+}
+
+// replaceJob stores a single-table fetch through ReplaceAll and turns a
+// truncated fetch into a warning the caller lists, while the cache keeps the
+// previous complete set (status "suspect").
+func replaceJob(db *cache.DB, rt cache.ResourceType, courseID int64, items []cache.CacheItem, truncated bool) (int, error) {
+	if _, err := db.ReplaceAll(rt, courseID, items, cache.ReplaceOptions{Truncated: truncated}); err != nil {
+		return 0, err
+	}
+	if truncated {
+		return len(items), fmt.Errorf("%w; cached set kept, marked suspect", canvas.ErrPaginationTruncated)
+	}
+	return len(items), nil
 }
 
 // syncResource runs a sync function and sends the result to the channel.

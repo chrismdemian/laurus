@@ -28,12 +28,42 @@ func (d *DB) IsStale(resource ResourceType, courseID int64) bool {
 
 // SetSyncMeta records that a resource type was synced now.
 func (d *DB) SetSyncMeta(resource ResourceType, courseID int64, count int, status string) error {
-	_, err := d.db.Exec(
-		`INSERT OR REPLACE INTO sync_meta (resource_type, course_id, last_sync_at, item_count, status)
-		 VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?, ?)`,
-		string(resource), courseID, count, status,
+	return setSyncMeta(d.db, resource, courseID, timestamp(time.Now()), count, status, true)
+}
+
+// execer is satisfied by *sql.DB and *sql.Tx.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// setSyncMeta upserts one sync_meta row by named columns (never INSERT OR
+// REPLACE, which would null any column not listed). When advance is false
+// the existing last_sync_at is kept: used for a suspect sync, so ListFresh
+// keeps serving the last complete set.
+func setSyncMeta(x execer, resource ResourceType, courseID int64, at string, count int, status string, advance bool) error {
+	_, err := x.Exec(
+		`INSERT INTO sync_meta (resource_type, course_id, last_sync_at, item_count, status)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(resource_type, course_id) DO UPDATE SET
+		   last_sync_at = CASE WHEN ? THEN excluded.last_sync_at ELSE sync_meta.last_sync_at END,
+		   item_count   = excluded.item_count,
+		   status       = excluded.status`,
+		string(resource), courseID, nullIfNotAdvancing(at, advance), count, status, advance,
 	)
 	return err
+}
+
+func nullIfNotAdvancing(at string, advance bool) any {
+	if advance {
+		return at
+	}
+	return nil
+}
+
+// timestamp formats t the way every fetched_at/last_sync_at column stores
+// it, so the strings compare correctly in SQL.
+func timestamp(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05Z")
 }
 
 // GetSyncMeta reads sync metadata for a resource type and course.

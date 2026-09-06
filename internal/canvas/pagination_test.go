@@ -2,6 +2,7 @@ package canvas
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -81,16 +82,25 @@ func TestPaginate_EmptyNextURL(t *testing.T) {
 	client := NewClient(server.URL, "token", "test")
 
 	var items []testItem
+	var truncated bool
 	for item, err := range Paginate[testItem](context.Background(), client, "/api/v1/items", nil) {
 		if err != nil {
-			t.Fatalf("Paginate() error: %v", err)
+			if !errors.Is(err, ErrPaginationTruncated) {
+				t.Fatalf("Paginate() error: %v", err)
+			}
+			truncated = true
+			continue
 		}
 		items = append(items, item)
 	}
 
-	// Should stop after first page (empty URL treated as no next page)
+	// The page's items are delivered, THEN a typed truncation error, so a
+	// caller keeps the partial data but cannot mistake it for the whole set.
 	if len(items) != 1 {
-		t.Errorf("got %d items, want 1 (should stop on empty next URL)", len(items))
+		t.Errorf("got %d items, want 1", len(items))
+	}
+	if !truncated {
+		t.Error("expected ErrPaginationTruncated after the items")
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
+	"github.com/chrismdemian/laurus/internal/pathsafe"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
 
@@ -90,13 +91,15 @@ func syncFilesRun(f *cmdutil.Factory, courseQuery string, dryRun bool) error {
 	var totalBytes int64
 
 	for _, course := range courses {
-		code := course.CourseCode
-		if code == "" {
+		// Course codes, folder names and file names all come from Canvas and
+		// are instructor-controlled; none may steer a write outside syncDir.
+		code := pathsafe.Name(course.CourseCode)
+		if course.CourseCode == "" {
 			code = fmt.Sprintf("course_%d", course.ID)
 		}
 
-		// Fetch folders to build ID -> path map.
-		folderPaths := make(map[int64]string)
+		// Fetch folders to build ID -> safe path components.
+		folderPaths := make(map[int64][]string)
 		for folder, err := range canvas.ListFolders(ctx, client, course.ID) {
 			if err != nil {
 				if errors.Is(err, canvas.ErrForbidden) {
@@ -105,12 +108,12 @@ func syncFilesRun(f *cmdutil.Factory, courseQuery string, dryRun bool) error {
 				}
 				return fmt.Errorf("listing folders for %s: %w", code, err)
 			}
-			// Strip "course files/" prefix from FullName.
+			// Strip "course files/" prefix from FullName, then sanitise each
+			// component so "../" inside a folder name cannot climb.
 			path := folder.FullName
 			path = strings.TrimPrefix(path, "course files/")
 			path = strings.TrimPrefix(path, "course files")
-			path = strings.TrimPrefix(path, "/")
-			folderPaths[folder.ID] = path
+			folderPaths[folder.ID] = pathsafe.Components(path)
 		}
 
 		if len(folderPaths) == 0 {
@@ -127,9 +130,14 @@ func syncFilesRun(f *cmdutil.Factory, courseQuery string, dryRun bool) error {
 				return fmt.Errorf("listing files for %s: %w", code, err)
 			}
 
-			// Determine local path.
-			folderPath := folderPaths[file.FolderID]
-			localPath := filepath.Join(syncDir, code, folderPath, file.DisplayName)
+			// Determine local path; refuse anything that resolves outside syncDir.
+			parts := append([]string{code}, folderPaths[file.FolderID]...)
+			parts = append(parts, pathsafe.Name(file.DisplayName))
+			localPath, err := pathsafe.Join(syncDir, parts...)
+			if err != nil {
+				_, _ = fmt.Fprintf(ios.ErrOut, "  [SKIP]  %s: %v\n", file.DisplayName, err)
+				continue
+			}
 
 			// Check if download is needed.
 			entry, entryErr := db.GetFileCacheEntry(file.ID)
@@ -148,7 +156,7 @@ func syncFilesRun(f *cmdutil.Factory, courseQuery string, dryRun bool) error {
 				continue
 			}
 
-			relPath := filepath.Join(code, folderPath, file.DisplayName)
+			relPath := filepath.Join(parts...)
 
 			if dryRun {
 				_, _ = fmt.Fprintf(ios.Out, "  [DOWNLOAD]  %s  (%s)\n", relPath, cmdutil.FormatFileSize(file.Size))

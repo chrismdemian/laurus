@@ -50,6 +50,10 @@ func (d *DB) List(table ResourceType, courseID int64, dest any) error {
 		args = append(args, courseID)
 	}
 
+	return d.listQuery(table, query, args, dest)
+}
+
+func (d *DB) listQuery(table ResourceType, query string, args []any, dest any) error {
 	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return fmt.Errorf("querying %s: %w", table, err)
@@ -145,6 +149,124 @@ func (d *DB) UpsertMany(table ResourceType, items []CacheItem) error {
 	}
 
 	return tx.Commit()
+}
+
+// ReplaceOptions tunes ReplaceAll.
+type ReplaceOptions struct {
+	// Truncated says the fetch is known to be incomplete (a pagination
+	// truncation error was seen). The rows are stored but nothing is pruned
+	// and the freshness stamp is not advanced.
+	Truncated bool
+}
+
+// Status values written to sync_meta by ReplaceAll and the sync layer.
+const (
+	StatusSuccess = "success"
+	StatusSuspect = "suspect" // fetch looked incomplete; old rows kept
+	StatusSkipped = "skipped" // endpoint disabled for this course (403/404)
+	StatusFailed  = "failed"  // fetch errored; see sync_meta.error
+)
+
+// ReplaceAll makes the cached set for (table, courseID) equal to items, in
+// ONE transaction: upsert every item with a single fetched_at, delete every
+// row of that course not touched by this call, and stamp sync_meta. Callers
+// must not swallow the error: a failed ReplaceAll leaves the previous state.
+//
+// Truncation guard: when opts.Truncated is set, or the fetch came back empty
+// while rows exist, the fetched rows are stored but nothing is deleted and
+// last_sync_at is NOT advanced, so ListFresh keeps serving the previous
+// complete set and sync_meta.status reads "suspect". One flaky page can
+// therefore never wipe a course. A genuine shrink to zero is handled on the
+// next successful fetch, which is also empty and then prunes because the
+// table is already empty.
+func (d *DB) ReplaceAll(table ResourceType, courseID int64, items []CacheItem, opts ReplaceOptions) (string, error) {
+	if !validTable(table) {
+		return "", fmt.Errorf("%w: %s", errInvalidTable, table)
+	}
+	now := timestamp(time.Now())
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var existing int
+	if err := tx.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE course_id = ?", table), courseID).Scan(&existing); err != nil {
+		return "", fmt.Errorf("counting %s: %w", table, err)
+	}
+	suspect := opts.Truncated || (len(items) == 0 && existing > 0)
+
+	if len(items) > 0 {
+		stmt, err := tx.Prepare(
+			fmt.Sprintf(`INSERT OR REPLACE INTO %s (id, course_id, data, updated_at, fetched_at)
+				VALUES (?, ?, ?, ?, ?)`, table),
+		)
+		if err != nil {
+			return "", fmt.Errorf("preparing upsert: %w", err)
+		}
+		for _, item := range items {
+			jsonData, err := json.Marshal(item.Data)
+			if err != nil {
+				_ = stmt.Close()
+				return "", fmt.Errorf("marshaling item %d: %w", item.ID, err)
+			}
+			var updatedAtStr *string
+			if item.UpdatedAt != nil {
+				s := item.UpdatedAt.UTC().Format(time.RFC3339)
+				updatedAtStr = &s
+			}
+			if _, err := stmt.Exec(item.ID, courseID, string(jsonData), updatedAtStr, now); err != nil {
+				_ = stmt.Close()
+				return "", fmt.Errorf("upserting item %d: %w", item.ID, err)
+			}
+		}
+		_ = stmt.Close()
+	}
+
+	status := StatusSuccess
+	if suspect {
+		status = StatusSuspect
+	} else {
+		// Everything of this course not stamped in this call is gone upstream.
+		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE course_id = ? AND fetched_at < ?", table), courseID, now); err != nil {
+			return "", fmt.Errorf("pruning %s: %w", table, err)
+		}
+	}
+	if err := setSyncMeta(tx, table, courseID, now, len(items), status, !suspect); err != nil {
+		return "", fmt.Errorf("recording sync: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("committing: %w", err)
+	}
+	return status, nil
+}
+
+// ListFresh is List restricted to rows fetched at or after the last complete
+// sync of (table, courseID), so rows an interrupted or suspect sync did not
+// touch are still served (they were part of the last complete set) while
+// nothing older than that set leaks through. With no sync_meta row it
+// behaves like List.
+func (d *DB) ListFresh(table ResourceType, courseID int64, dest any) (SyncMeta, error) {
+	meta, err := d.GetSyncMeta(table, courseID)
+	if err != nil {
+		return meta, err
+	}
+	if !validTable(table) {
+		return meta, fmt.Errorf("%w: %s", errInvalidTable, table)
+	}
+	query := fmt.Sprintf("SELECT data FROM %s WHERE fetched_at >= ?", table)
+	args := []any{timestamp(meta.LastSyncAt)}
+	if meta.LastSyncAt.IsZero() {
+		query = fmt.Sprintf("SELECT data FROM %s WHERE 1 = ?", table)
+		args = []any{1}
+	}
+	if courseID != 0 {
+		query += " AND course_id = ?"
+		args = append(args, courseID)
+	}
+	query += " ORDER BY id"
+	return meta, d.listQuery(table, query, args, dest)
 }
 
 // Prune deletes rows from a table where course_id matches and id is NOT in validIDs.

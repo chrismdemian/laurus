@@ -12,6 +12,7 @@ import (
 
 	"github.com/chrismdemian/laurus/internal/canvas"
 	"github.com/chrismdemian/laurus/internal/iostreams"
+	"github.com/chrismdemian/laurus/internal/pathsafe"
 	"github.com/chrismdemian/laurus/internal/render"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
@@ -323,27 +324,10 @@ func downloadAssignmentItem(ctx context.Context, c *canvas.Client, ios *iostream
 
 // sanitizeDirName creates a safe directory name from a string.
 func sanitizeDirName(name string) string {
-	// Replace characters that are invalid in Windows/macOS/Linux paths
-	replacer := strings.NewReplacer(
-		"/", "-",
-		"\\", "-",
-		":", " -",
-		"*", "",
-		"?", "",
-		"\"", "",
-		"<", "",
-		">", "",
-		"|", "",
-	)
-	result := replacer.Replace(strings.TrimSpace(name))
-	// Collapse multiple spaces
-	for strings.Contains(result, "  ") {
-		result = strings.ReplaceAll(result, "  ", " ")
-	}
-	return result
+	return pathsafe.Name(name)
 }
 
 // sanitizeFileName creates a safe file name from a string (without extension).
 func sanitizeFileName(name string) string {
-	return sanitizeDirName(name)
+	return pathsafe.Name(name)
 }

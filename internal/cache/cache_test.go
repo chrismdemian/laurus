@@ -477,3 +477,109 @@ func TestTTL(t *testing.T) {
 		}
 	}
 }
+
+// TestReplaceAll_Sequence exercises the truncation guard end to end:
+// 10 rows synced; 3 rows + truncation gives 10 back and status suspect;
+// a full 10 again clears it; 9 (a real deletion) gives 9; an empty fetch
+// against a populated table is suspect (kept), and the meta stamp only
+// advances on complete syncs.
+func TestReplaceAll_Sequence(t *testing.T) {
+	db := testDB(t)
+	mk := func(ids ...int64) []CacheItem {
+		items := make([]CacheItem, len(ids))
+		for i, id := range ids {
+			items[i] = CacheItem{ID: id, CourseID: 100, Data: testAssignment{ID: id, CourseID: 100, Name: "a"}}
+		}
+		return items
+	}
+	fresh := func() ([]testAssignment, SyncMeta) {
+		var out []testAssignment
+		meta, err := db.ListFresh(ResourceAssignments, 100, &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out, meta
+	}
+
+	// Another course must never be touched by course 100's replaces.
+	if _, err := db.ReplaceAll(ResourceAssignments, 200, mk(999), ReplaceOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := db.ReplaceAll(ResourceAssignments, 100, mk(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), ReplaceOptions{})
+	if err != nil || status != StatusSuccess {
+		t.Fatalf("full sync: status=%s err=%v", status, err)
+	}
+	got, meta := fresh()
+	if len(got) != 10 || meta.Status != StatusSuccess || meta.LastSyncAt.IsZero() {
+		t.Fatalf("after full sync: %d rows, meta %+v", len(got), meta)
+	}
+	firstStamp := meta.LastSyncAt
+
+	time.Sleep(1100 * time.Millisecond) // second-resolution stamps
+
+	status, err = db.ReplaceAll(ResourceAssignments, 100, mk(1, 2, 3), ReplaceOptions{Truncated: true})
+	if err != nil || status != StatusSuspect {
+		t.Fatalf("truncated sync: status=%s err=%v", status, err)
+	}
+	got, meta = fresh()
+	if len(got) != 10 {
+		t.Errorf("after truncated sync: %d rows served, want 10 (previous complete set kept)", len(got))
+	}
+	if meta.Status != StatusSuspect || !meta.LastSyncAt.Equal(firstStamp) {
+		t.Errorf("after truncated sync: meta %+v, want suspect with unchanged stamp %v", meta, firstStamp)
+	}
+
+	status, err = db.ReplaceAll(ResourceAssignments, 100, nil, ReplaceOptions{})
+	if err != nil || status != StatusSuspect {
+		t.Fatalf("empty fetch on populated table: status=%s err=%v", status, err)
+	}
+	if got, _ = fresh(); len(got) != 10 {
+		t.Errorf("after empty fetch: %d rows, want 10", len(got))
+	}
+
+	time.Sleep(1100 * time.Millisecond)
+	status, err = db.ReplaceAll(ResourceAssignments, 100, mk(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), ReplaceOptions{})
+	if err != nil || status != StatusSuccess {
+		t.Fatalf("recovery sync: status=%s err=%v", status, err)
+	}
+	got, meta = fresh()
+	if len(got) != 10 || meta.Status != StatusSuccess || !meta.LastSyncAt.After(firstStamp) {
+		t.Errorf("after recovery: %d rows, meta %+v", len(got), meta)
+	}
+
+	time.Sleep(1100 * time.Millisecond)
+	status, err = db.ReplaceAll(ResourceAssignments, 100, mk(1, 2, 3, 4, 5, 6, 7, 8, 9), ReplaceOptions{})
+	if err != nil || status != StatusSuccess {
+		t.Fatalf("deletion sync: status=%s err=%v", status, err)
+	}
+	if got, _ = fresh(); len(got) != 9 {
+		t.Errorf("after real deletion: %d rows, want 9", len(got))
+	}
+	n, _ := db.Count(ResourceAssignments, 100)
+	if n != 9 {
+		t.Errorf("table rows = %d, want 9 (row 10 pruned)", n)
+	}
+
+	var other []testAssignment
+	if _, err := db.ListFresh(ResourceAssignments, 200, &other); err != nil || len(other) != 1 {
+		t.Errorf("course 200 = %d rows, %v; want 1 untouched", len(other), err)
+	}
+}
+
+// TestSetSyncMeta_NamedColumns proves the upsert does not null columns it
+// does not mention (the V3 columns depend on this).
+func TestSetSyncMeta_NamedColumns(t *testing.T) {
+	db := testDB(t)
+	if err := db.SetSyncMeta(ResourceCourses, 0, 3, StatusSuccess); err != nil {
+		t.Fatal(err)
+	}
+	m1, _ := db.GetSyncMeta(ResourceCourses, 0)
+	if err := setSyncMeta(db.db, ResourceCourses, 0, timestamp(time.Now().Add(time.Hour)), 0, StatusSuspect, false); err != nil {
+		t.Fatal(err)
+	}
+	m2, _ := db.GetSyncMeta(ResourceCourses, 0)
+	if !m2.LastSyncAt.Equal(m1.LastSyncAt) || m2.Status != StatusSuspect || m2.ItemCount != 0 {
+		t.Errorf("non-advancing write: %+v -> %+v", m1, m2)
+	}
+}

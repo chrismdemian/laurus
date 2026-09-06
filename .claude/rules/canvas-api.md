@@ -15,7 +15,7 @@ paths:
 - Parse `Link` header case-insensitively
 - Default page size is 10; request `per_page=100` for efficiency
 - `rel="next"` absent = last page; `rel="last"` may be omitted on expensive endpoints
-- Handle empty URLs in Link header gracefully (confirmed intermittent Canvas bug)
+- A `rel="next"` with an EMPTY URL is a confirmed intermittent Canvas bug: `Paginate` yields the items it has, then `ErrPaginationTruncated`. Never treat that partial set as complete (the cache marks it `suspect` and does not prune)
 
 ## Rate Limiting
 - Watch `X-Rate-Limit-Remaining` header on every response

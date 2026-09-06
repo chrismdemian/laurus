@@ -4,6 +4,7 @@ package cache
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -74,16 +75,30 @@ func validTable(rt ResourceType) bool {
 	return false
 }
 
-// pragmas are applied on every connection open.
-const pragmas = `
-PRAGMA journal_mode = WAL;
-PRAGMA busy_timeout = 5000;
-PRAGMA synchronous = normal;
-PRAGMA temp_store = memory;
-PRAGMA mmap_size = 268435456;
-PRAGMA cache_size = -32000;
-PRAGMA foreign_keys = ON;
-`
+// connPragmas are applied by the driver on EVERY connection it opens. They
+// live in the DSN on purpose: a one-shot "PRAGMA ..." Exec only configures
+// whichever pooled connection happened to run it, and database/sql can drop
+// and reopen connections at any time. That was the SQLITE_BUSY bug: a second
+// connection had busy_timeout=0 and most concurrent writes failed.
+var connPragmas = []string{
+	"busy_timeout(5000)",
+	"journal_mode(WAL)",
+	"synchronous(NORMAL)",
+	"temp_store(MEMORY)",
+	"foreign_keys(ON)",
+	"cache_size(-32000)",
+}
+
+// dsn builds the modernc.org/sqlite connection string for path.
+func dsn(path string) string {
+	q := url.Values{}
+	for _, p := range connPragmas {
+		q.Add("_pragma", p)
+	}
+	// The driver strips the query itself, so the path is passed verbatim
+	// (spaces included, e.g. ~/Library/Application Support/laurus).
+	return "file:" + path + "?" + q.Encode()
+}
 
 // Open opens or creates a SQLite cache database at the given path.
 // It applies PRAGMAs and runs any pending schema migrations.
@@ -93,15 +108,21 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("creating cache directory: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", dsn(path))
 	if err != nil {
 		return nil, fmt.Errorf("opening cache database: %w", err)
 	}
+	// One connection per handle: writes from this process serialise in Go
+	// rather than contending in SQLite, and every statement sees the same
+	// connection-level pragmas. Cross-process contention is handled by
+	// busy_timeout in the DSN. Any code holding a *sql.Tx must therefore
+	// never call a d.db.* method until the tx is finished.
+	db.SetMaxOpenConns(1)
 
-	// Apply performance PRAGMAs.
-	if _, err := db.Exec(pragmas); err != nil {
+	// Fail early if the file is unusable rather than on the first query.
+	if err := db.Ping(); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("setting PRAGMAs: %w", err)
+		return nil, fmt.Errorf("opening cache database: %w", err)
 	}
 
 	// Run schema migrations.
