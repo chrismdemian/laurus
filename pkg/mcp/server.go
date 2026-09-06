@@ -22,11 +22,25 @@ type Server struct {
 	version string
 }
 
-// NewServer creates a configured MCP server with all Canvas tools registered.
-func NewServer(f *cmdutil.Factory) *server.MCPServer {
+const (
+	instructionsBase = "Canvas LMS tools for reading courses, assignments, grades, discussions, and more. Course parameters accept names, course codes, or numeric IDs (e.g. \"CSC108\", \"csc108\", or \"12345\")."
+
+	instructionsReadOnly = instructionsBase + " This server is running in READ-ONLY mode: no tool can submit, post, send, book, or modify anything in Canvas. If asked to perform such an action, explain that it is not available here."
+)
+
+// NewServer creates a configured MCP server with Canvas tools registered.
+//
+// When readOnly is true, the write tools (see registerWriteTools) are never
+// registered, so the connected model cannot see or call them.
+func NewServer(f *cmdutil.Factory, readOnly bool) *server.MCPServer {
 	s := &Server{
 		client:  f.Client,
 		version: f.Version,
+	}
+
+	instructions := instructionsBase
+	if readOnly {
+		instructions = instructionsReadOnly
 	}
 
 	srv := server.NewMCPServer(
@@ -34,7 +48,7 @@ func NewServer(f *cmdutil.Factory) *server.MCPServer {
 		f.Version,
 		server.WithToolCapabilities(false),
 		server.WithRecovery(),
-		server.WithInstructions("Canvas LMS tools for reading courses, assignments, grades, discussions, and more. Course parameters accept names, course codes, or numeric IDs (e.g. \"CSC108\", \"csc108\", or \"12345\")."),
+		server.WithInstructions(instructions),
 	)
 
 	s.registerCourseTools(srv)
@@ -47,7 +61,9 @@ func NewServer(f *cmdutil.Factory) *server.MCPServer {
 	s.registerFileTools(srv)
 	s.registerPageTools(srv)
 	s.registerCalendarTools(srv)
-	s.registerWriteTools(srv)
+	if !readOnly {
+		s.registerWriteTools(srv)
+	}
 
 	return srv
 }

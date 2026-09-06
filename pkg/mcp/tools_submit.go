@@ -11,6 +11,9 @@ import (
 	"github.com/chrismdemian/laurus/internal/canvas"
 )
 
+// registerWriteTools registers every tool that mutates Canvas state.
+// This is the single write seam: NewServer skips it entirely in read-only
+// mode, so any new mutating tool MUST be registered here and nowhere else.
 func (s *Server) registerWriteTools(srv *server.MCPServer) {
 	srv.AddTool(
 		mcplib.NewTool("submit_assignment",
@@ -99,16 +102,6 @@ func (s *Server) registerWriteTools(srv *server.MCPServer) {
 	)
 
 	srv.AddTool(
-		mcplib.NewTool("list_office_hours",
-			mcplib.WithDescription("List available office hours appointment slots."),
-			mcplib.WithString("course",
-				mcplib.Description("Filter by course name, code, or ID (optional)"),
-			),
-		),
-		mcplib.NewTypedToolHandler(s.handleListOfficeHours),
-	)
-
-	srv.AddTool(
 		mcplib.NewTool("book_office_hours",
 			mcplib.WithDescription("Reserve an office hours appointment slot."),
 			mcplib.WithNumber("slot_id",
@@ -117,6 +110,62 @@ func (s *Server) registerWriteTools(srv *server.MCPServer) {
 			),
 		),
 		mcplib.NewTypedToolHandler(s.handleBookOfficeHours),
+	)
+
+	srv.AddTool(
+		mcplib.NewTool("reply_to_discussion",
+			mcplib.WithDescription("Post a reply to a discussion topic."),
+			mcplib.WithString("course",
+				mcplib.Required(),
+				mcplib.Description("Course name, code, or ID"),
+			),
+			mcplib.WithString("discussion",
+				mcplib.Required(),
+				mcplib.Description("Discussion topic name or ID"),
+			),
+			mcplib.WithString("message",
+				mcplib.Required(),
+				mcplib.Description("Reply message content"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleReplyToDiscussion),
+	)
+
+	srv.AddTool(
+		mcplib.NewTool("reply_to_conversation",
+			mcplib.WithDescription("Reply to an existing inbox conversation."),
+			mcplib.WithNumber("conversation_id",
+				mcplib.Required(),
+				mcplib.Description("Conversation ID to reply to"),
+			),
+			mcplib.WithString("body",
+				mcplib.Required(),
+				mcplib.Description("Reply message body"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleReplyToConversation),
+	)
+
+	srv.AddTool(
+		mcplib.NewTool("send_message",
+			mcplib.WithDescription("Send a new Canvas inbox message to a recipient."),
+			mcplib.WithString("recipient",
+				mcplib.Required(),
+				mcplib.Description("Recipient name to search for"),
+			),
+			mcplib.WithString("subject",
+				mcplib.Required(),
+				mcplib.Description("Message subject line"),
+			),
+			mcplib.WithString("body",
+				mcplib.Required(),
+				mcplib.Description("Message body"),
+			),
+			mcplib.WithString("course",
+				mcplib.Description("Course context for recipient search (optional, improves match accuracy)"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleSendMessage),
 	)
 }
 

@@ -38,24 +38,6 @@ func (s *Server) registerDiscussionTools(srv *server.MCPServer) {
 		mcplib.NewTypedToolHandler(s.handleGetDiscussion),
 	)
 
-	srv.AddTool(
-		mcplib.NewTool("reply_to_discussion",
-			mcplib.WithDescription("Post a reply to a discussion topic."),
-			mcplib.WithString("course",
-				mcplib.Required(),
-				mcplib.Description("Course name, code, or ID"),
-			),
-			mcplib.WithString("discussion",
-				mcplib.Required(),
-				mcplib.Description("Discussion topic name or ID"),
-			),
-			mcplib.WithString("message",
-				mcplib.Required(),
-				mcplib.Description("Reply message content"),
-			),
-		),
-		mcplib.NewTypedToolHandler(s.handleReplyToDiscussion),
-	)
 }
 
 type listDiscussionsArgs struct {

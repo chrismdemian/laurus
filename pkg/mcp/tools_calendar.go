@@ -45,6 +45,16 @@ func (s *Server) registerCalendarTools(srv *server.MCPServer) {
 		),
 		mcplib.NewTypedToolHandler(s.handleSearchCourse),
 	)
+
+	srv.AddTool(
+		mcplib.NewTool("list_office_hours",
+			mcplib.WithDescription("List available office hours appointment slots."),
+			mcplib.WithString("course",
+				mcplib.Description("Filter by course name, code, or ID (optional)"),
+			),
+		),
+		mcplib.NewTypedToolHandler(s.handleListOfficeHours),
+	)
 }
 
 type listCalendarArgs struct {

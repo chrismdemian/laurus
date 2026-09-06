@@ -25,16 +25,27 @@ func NewCmdMCP(f *cmdutil.Factory) *cobra.Command {
 }
 
 func newCmdServe(f *cmdutil.Factory) *cobra.Command {
-	return &cobra.Command{
+	var readOnly bool
+
+	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the MCP server on stdio",
-		Long:  "Start the MCP server using stdio transport. The server reads JSON-RPC from stdin and writes responses to stdout. All logging goes to stderr.",
+		Long: `Start the MCP server using stdio transport. The server reads JSON-RPC from stdin and writes responses to stdout. All logging goes to stderr.
+
+With --read-only, tools that modify Canvas (submitting assignments, sending
+messages, posting discussion replies, booking office hours, managing planner
+notes, marking module items done) are not registered at all, so the connected
+AI assistant can only read.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// MCP protocol uses stdout exclusively — redirect all logs to stderr
 			log.SetOutput(os.Stderr)
 
-			srv := mcpserver.NewServer(f)
+			srv := mcpserver.NewServer(f, readOnly)
 			return server.ServeStdio(srv)
 		},
 	}
+
+	cmd.Flags().BoolVar(&readOnly, "read-only", false, "Expose only read tools; never register tools that modify Canvas")
+
+	return cmd
 }

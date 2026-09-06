@@ -41,42 +41,6 @@ func (s *Server) registerInboxTools(srv *server.MCPServer) {
 		mcplib.NewTypedToolHandler(s.handleReadConversation),
 	)
 
-	srv.AddTool(
-		mcplib.NewTool("reply_to_conversation",
-			mcplib.WithDescription("Reply to an existing inbox conversation."),
-			mcplib.WithNumber("conversation_id",
-				mcplib.Required(),
-				mcplib.Description("Conversation ID to reply to"),
-			),
-			mcplib.WithString("body",
-				mcplib.Required(),
-				mcplib.Description("Reply message body"),
-			),
-		),
-		mcplib.NewTypedToolHandler(s.handleReplyToConversation),
-	)
-
-	srv.AddTool(
-		mcplib.NewTool("send_message",
-			mcplib.WithDescription("Send a new Canvas inbox message to a recipient."),
-			mcplib.WithString("recipient",
-				mcplib.Required(),
-				mcplib.Description("Recipient name to search for"),
-			),
-			mcplib.WithString("subject",
-				mcplib.Required(),
-				mcplib.Description("Message subject line"),
-			),
-			mcplib.WithString("body",
-				mcplib.Required(),
-				mcplib.Description("Message body"),
-			),
-			mcplib.WithString("course",
-				mcplib.Description("Course context for recipient search (optional, improves match accuracy)"),
-			),
-		),
-		mcplib.NewTypedToolHandler(s.handleSendMessage),
-	)
 }
 
 type listInboxArgs struct {
