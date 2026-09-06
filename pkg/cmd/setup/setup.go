@@ -37,7 +37,7 @@ and stdout, missing values are always an error rather than a hung prompt.`,
 		// Errors here are actionable on their own (missing token, rejected
 		// token); a usage dump after them only buries the message for agents.
 		SilenceUsage: true,
-		Args: cobra.NoArgs,
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return setupRun(f, opts)
 		},
