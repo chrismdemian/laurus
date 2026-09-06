@@ -384,10 +384,18 @@ func TestCacheFirst_SuspectBacksOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := f.count("assignment_groups")
+	// The single-resource read reports the suspect status verbatim.
+	var rows []canvas.Assignment
+	env, err := s.read(ctx, readSpec{rt: cache.ResourceAssignments, courseID: 1, ttl: tierGrade}, &rows, nil)
+	if err != nil || !env.Stale || env.SyncStatus != cache.StatusSuspect || len(rows) != 1 {
+		t.Fatalf("direct read: env=%+v rows=%d err=%v; want stale suspect with the previous set", env, len(rows), err)
+	}
+	// The aggregate handler folds it into stale=true (it merges courses, so
+	// it carries no single sync_status).
 	for i := 0; i < 3; i++ {
 		res, _ = s.handleListAssignments(ctx, mcplib.CallToolRequest{}, listAssignmentsArgs{Course: "CSC108"})
-		if env := decodeEnvelope(t, res); !env.Stale || env.SyncStatus != cache.StatusSuspect {
-			t.Errorf("read %d: %+v; want stale suspect", i, env)
+		if env := decodeEnvelope(t, res); !env.Stale || len(env.Data.([]any)) != 1 {
+			t.Errorf("read %d: %+v; want stale with the previous set", i, env)
 		}
 	}
 	if f.count("assignment_groups") != before {
@@ -398,8 +406,11 @@ func TestCacheFirst_SuspectBacksOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, _ = s.handleListAssignments(ctx, mcplib.CallToolRequest{}, listAssignmentsArgs{Course: "CSC108"})
-	if env := decodeEnvelope(t, res); env.Stale || env.SyncStatus != cache.StatusSuccess {
+	if env := decodeEnvelope(t, res); env.Stale {
 		t.Errorf("after backoff: %+v", env)
+	}
+	if m, _ := db.GetSyncMeta(cache.ResourceAssignments, 1); m.Status != cache.StatusSuccess {
+		t.Errorf("after backoff status = %q, want success", m.Status)
 	}
 	if f.count("assignment_groups") != before+1 {
 		t.Errorf("expected exactly one retry after the backoff window")
