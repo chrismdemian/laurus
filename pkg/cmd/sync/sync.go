@@ -61,6 +61,7 @@ func syncRun(f *cmdutil.Factory, courseQuery string) error {
 		return res.Err
 	}
 	_, _ = fmt.Fprintf(ios.ErrOut, "  %-12s  %-20s  %d items\n", "all", "courses", res.Count)
+	courses = syncer.ActiveCourses(courses)
 
 	if courseQuery != "" {
 		course, err := canvas.FindCourse(ctx, client, courseQuery)

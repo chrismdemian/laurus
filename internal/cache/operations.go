@@ -169,7 +169,7 @@ const (
 
 // ReplaceAll makes the cached set for (table, courseID) equal to items, in
 // ONE transaction: upsert every item with a single fetched_at, delete every
-// row of that course not touched by this call, and stamp sync_meta. Callers
+// row of that course whose id is not in items, and stamp sync_meta. Callers
 // must not swallow the error: a failed ReplaceAll leaves the previous state.
 //
 // Truncation guard: when opts.Truncated is set, or the fetch came back empty
@@ -228,9 +228,26 @@ func (d *DB) ReplaceAll(table ResourceType, courseID int64, items []CacheItem, o
 	if suspect {
 		status = StatusSuspect
 	} else {
-		// Everything of this course not stamped in this call is gone upstream.
-		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE course_id = ? AND fetched_at < ?", table), courseID, now); err != nil {
+		// Everything of this course not in the fetched set is gone upstream.
+		// The keep-set goes through a temp table (per connection, and this
+		// handle has one) so there is no bound-parameter cap and no reliance
+		// on second-granular timestamps.
+		if _, err := tx.Exec("CREATE TEMP TABLE IF NOT EXISTS keep_ids (id INTEGER PRIMARY KEY)"); err != nil {
+			return "", fmt.Errorf("preparing prune: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM keep_ids"); err != nil {
+			return "", fmt.Errorf("preparing prune: %w", err)
+		}
+		for _, item := range items {
+			if _, err := tx.Exec("INSERT OR IGNORE INTO keep_ids (id) VALUES (?)", item.ID); err != nil {
+				return "", fmt.Errorf("preparing prune: %w", err)
+			}
+		}
+		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE course_id = ? AND id NOT IN (SELECT id FROM keep_ids)", table), courseID); err != nil {
 			return "", fmt.Errorf("pruning %s: %w", table, err)
+		}
+		if _, err := tx.Exec("DELETE FROM keep_ids"); err != nil {
+			return "", fmt.Errorf("finishing prune: %w", err)
 		}
 	}
 	if err := setSyncMeta(tx, table, courseID, now, len(items), status, !suspect); err != nil {

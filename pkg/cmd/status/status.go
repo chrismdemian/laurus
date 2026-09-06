@@ -9,6 +9,7 @@ import (
 
 	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
+	"github.com/chrismdemian/laurus/internal/syncer"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
 
@@ -46,11 +47,27 @@ func statusRun(f *cmdutil.Factory, short bool) error {
 		return nil
 	}
 
-	// Read cached assignments.
-	var assignments []canvas.Assignment
-	if err := db.List(cache.ResourceAssignments, 0, &assignments); err != nil {
+	// Only courses still running count; the cache also holds completed
+	// courses (for grade history) whose old deadlines are not "overdue".
+	var courses []canvas.Course
+	if _, err := db.ListFresh(cache.ResourceCourses, 0, &courses); err != nil {
 		_, _ = fmt.Fprintln(ios.ErrOut, "No cached data. Run 'laurus sync' to populate.")
 		return nil
+	}
+	active := map[int64]bool{}
+	for _, c := range syncer.ActiveCourses(courses) {
+		active[c.ID] = true
+	}
+
+	// Read cached assignments from the last complete sync of each course.
+	var assignments []canvas.Assignment
+	for id := range active {
+		var batch []canvas.Assignment
+		if _, err := db.ListFresh(cache.ResourceAssignments, id, &batch); err != nil {
+			_, _ = fmt.Fprintln(ios.ErrOut, "No cached data. Run 'laurus sync' to populate.")
+			return nil
+		}
+		assignments = append(assignments, batch...)
 	}
 
 	now := time.Now()
@@ -77,11 +94,13 @@ func statusRun(f *cmdutil.Factory, short bool) error {
 	}
 
 	// Read cached announcements for unread count.
-	var announcements []canvas.Announcement
-	if err := db.List(cache.ResourceAnnouncements, 0, &announcements); err == nil {
-		for _, a := range announcements {
-			if a.ReadState == "unread" {
-				counts.Unread++
+	for id := range active {
+		var announcements []canvas.Announcement
+		if _, err := db.ListFresh(cache.ResourceAnnouncements, id, &announcements); err == nil {
+			for _, a := range announcements {
+				if a.ReadState == "unread" {
+					counts.Unread++
+				}
 			}
 		}
 	}

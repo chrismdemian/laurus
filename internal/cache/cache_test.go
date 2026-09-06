@@ -583,3 +583,33 @@ func TestSetSyncMeta_NamedColumns(t *testing.T) {
 		t.Errorf("non-advancing write: %+v -> %+v", m1, m2)
 	}
 }
+
+// Two ReplaceAll calls inside the same second must still prune: the keep
+// set is explicit, not timestamp-based.
+func TestReplaceAll_PrunesWithinSameSecond(t *testing.T) {
+	db := testDB(t)
+	mk := func(ids ...int64) []CacheItem {
+		items := make([]CacheItem, len(ids))
+		for i, id := range ids {
+			items[i] = CacheItem{ID: id, CourseID: 5, Data: testAssignment{ID: id, CourseID: 5}}
+		}
+		return items
+	}
+	if _, err := db.ReplaceAll(ResourceAssignments, 5, mk(1, 2, 3), ReplaceOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ReplaceAll(ResourceAssignments, 5, mk(2, 3, 4), ReplaceOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	var got []testAssignment
+	if _, err := db.ListFresh(ResourceAssignments, 5, &got); err != nil {
+		t.Fatal(err)
+	}
+	ids := map[int64]bool{}
+	for _, a := range got {
+		ids[a.ID] = true
+	}
+	if len(got) != 3 || ids[1] || !ids[4] {
+		t.Errorf("after back-to-back replace: ids=%v, want {2,3,4}", ids)
+	}
+}

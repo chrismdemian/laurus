@@ -67,14 +67,14 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 		modules = append(modules, m)
 	}
 
-	// Opportunistic cache write.
+	// Opportunistic cache write: rows only. sync_meta belongs to the sync
+	// layer, which is the only writer that has seen the complete set.
 	if db, err := f.Cache(); err == nil {
 		cacheItems := make([]cache.CacheItem, len(modules))
 		for i, x := range modules {
 			cacheItems[i] = cache.CacheItem{ID: x.ID, CourseID: course.ID, Data: x}
 		}
 		_ = db.UpsertMany(cache.ResourceModules, cacheItems)
-		_ = db.SetSyncMeta(cache.ResourceModules, course.ID, len(cacheItems), "success")
 	}
 
 	if ios.IsJSON {

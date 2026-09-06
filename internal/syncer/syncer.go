@@ -96,22 +96,33 @@ func SyncResource(ctx context.Context, client *canvas.Client, db *cache.DB, rt c
 	return SyncJob(ctx, client, db, job, courseID)
 }
 
-// SyncCourses replaces the cached course list. It returns the fetched
-// courses so callers can fan out per-course jobs without a second call.
-// A truncated course list is refused outright: syncing (and pruning)
-// against half a root set is worse than not syncing.
+// SyncCourses replaces the cached course list with the user's active AND
+// completed courses (completed ones keep grade history readable offline),
+// merged by ID and pruned within that fetched set. It returns the courses
+// so callers can fan out per-course jobs; use ActiveCourses to pick the
+// ones worth syncing. A truncated list is refused outright: syncing (and
+// pruning) against half a root set is worse than not syncing.
 func SyncCourses(ctx context.Context, client *canvas.Client, db *cache.DB) ([]canvas.Course, Result) {
 	res := Result{Job: JobCourses}
+	include := []string{"enrollments", "total_scores"}
+	queries := []canvas.CourseListOptions{
+		{EnrollmentState: "active", Include: include},
+		{EnrollmentState: "completed", Include: include},
+	}
+	seen := map[int64]bool{}
 	var courses []canvas.Course
-	for c, err := range canvas.ListCourses(ctx, client, canvas.CourseListOptions{
-		EnrollmentState: "active",
-		Include:         []string{"enrollments", "total_scores"},
-	}) {
-		if err != nil {
-			res.Status, res.Err = cache.StatusFailed, fmt.Errorf("listing courses: %w", err)
-			return nil, res
+	for _, q := range queries {
+		for c, err := range canvas.ListCourses(ctx, client, q) {
+			if err != nil {
+				res.Status, res.Err = cache.StatusFailed, fmt.Errorf("listing courses: %w", err)
+				return nil, res
+			}
+			if seen[c.ID] {
+				continue
+			}
+			seen[c.ID] = true
+			courses = append(courses, c)
 		}
-		courses = append(courses, c)
 	}
 	items := make([]cache.CacheItem, len(courses))
 	for i, c := range courses {
@@ -390,6 +401,24 @@ func SyncAll(ctx context.Context, client *canvas.Client, db *cache.DB, courses [
 	}
 	sum.Elapsed = time.Since(start)
 	return sum
+}
+
+// ActiveCourses filters to courses still running: workflow_state
+// "available" (Canvas marks concluded ones "completed") and no end date
+// in the past. Per-course jobs run for these only.
+func ActiveCourses(courses []canvas.Course) []canvas.Course {
+	now := time.Now()
+	var out []canvas.Course
+	for _, c := range courses {
+		if c.WorkflowState == "completed" {
+			continue
+		}
+		if c.EndAt != nil && c.EndAt.Before(now) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // CourseLabel is the code used in reports, falling back to the numeric ID.

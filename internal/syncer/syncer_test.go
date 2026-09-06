@@ -35,7 +35,14 @@ func fakeCanvas(t *testing.T) *httptest.Server {
 		case strings.HasSuffix(p, "/discussion_topics"), strings.HasSuffix(p, "/files"), strings.HasSuffix(p, "/folders"):
 			fmt.Fprint(w, `[]`)
 		case p == "/api/v1/courses":
-			fmt.Fprint(w, `[{"id":1,"name":"Intro","course_code":"CSC108"}]`)
+			switch r.URL.Query().Get("enrollment_state") {
+			case "active":
+				fmt.Fprint(w, `[{"id":1,"name":"Intro","course_code":"CSC108","workflow_state":"available"},{"id":2,"name":"Both","course_code":"DUP","workflow_state":"available"}]`)
+			case "completed":
+				fmt.Fprint(w, `[{"id":2,"name":"Both","course_code":"DUP","workflow_state":"available"},{"id":9,"name":"Old","course_code":"OLD101","workflow_state":"completed"}]`)
+			default:
+				fmt.Fprint(w, `[]`)
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -138,10 +145,28 @@ func TestSyncAll_CollectsResults(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
 
-	courses, res := SyncCourses(ctx, client, db)
-	if res.Status != cache.StatusSuccess || len(courses) != 1 {
-		t.Fatalf("SyncCourses: %+v, %d courses", res, len(courses))
+	// Pre-existing course that Canvas no longer returns must be pruned.
+	if _, err := db.ReplaceAll(cache.ResourceCourses, 0, []cache.CacheItem{{ID: 77, Data: map[string]any{"id": 77, "course_code": "GONE"}}}, cache.ReplaceOptions{}); err != nil {
+		t.Fatal(err)
 	}
+	courses, res := SyncCourses(ctx, client, db)
+	if res.Status != cache.StatusSuccess || len(courses) != 3 {
+		t.Fatalf("SyncCourses: %+v, %d courses (want 3: active 1, both 2, completed 9, merged by id)", res, len(courses))
+	}
+	var cached []canvas.Course
+	if _, err := db.ListFresh(cache.ResourceCourses, 0, &cached); err != nil || len(cached) != 3 {
+		t.Fatalf("cached courses = %d, %v; want 3 (77 pruned)", len(cached), err)
+	}
+	for _, c := range cached {
+		if c.ID == 77 {
+			t.Error("course 77 should have been pruned")
+		}
+	}
+	courses = ActiveCourses(courses)
+	if len(courses) != 2 {
+		t.Fatalf("ActiveCourses = %d, want 2 (OLD101 completed)", len(courses))
+	}
+	courses = courses[:1] // fan out over CSC108 only; the fake's data is per-suffix anyway
 	var n int
 	sum := SyncAll(ctx, client, db, courses, Options{OnResult: func(Result) { n++ }})
 	if len(sum.Results) != len(CourseJobs) || n != len(CourseJobs) {

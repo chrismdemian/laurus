@@ -115,14 +115,13 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 			courses = append(courses, c)
 		}
 
-		// Opportunistic cache write for courses.
+		// Opportunistic cache write (rows only; see sync layer for sync_meta).
 		if db, err := f.Cache(); err == nil {
 			courseItems := make([]cache.CacheItem, len(courses))
 			for i, x := range courses {
 				courseItems[i] = cache.CacheItem{ID: x.ID, CourseID: 0, Data: x}
 			}
 			_ = db.UpsertMany(cache.ResourceCourses, courseItems)
-			_ = db.SetSyncMeta(cache.ResourceCourses, 0, len(courseItems), "success")
 		}
 
 		for _, course := range courses {
@@ -148,7 +147,6 @@ func listRun(f *cmdutil.Factory, opts listOpts) error {
 					aItems[i] = cache.CacheItem{ID: x.ID, CourseID: course.ID, Data: x}
 				}
 				_ = db.UpsertMany(cache.ResourceAssignments, aItems)
-				_ = db.SetSyncMeta(cache.ResourceAssignments, course.ID, len(aItems), "success")
 			}
 		}
 	}

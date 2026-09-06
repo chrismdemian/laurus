@@ -131,14 +131,14 @@ func calendarRun(f *cmdutil.Factory, opts calendarOpts) error {
 		}
 	}
 
-	// Opportunistic cache write.
+	// Opportunistic cache write: rows only. sync_meta belongs to the sync
+	// layer, which is the only writer that has seen the complete set.
 	if db, err := f.Cache(); err == nil {
 		cacheItems := make([]cache.CacheItem, len(events))
 		for i, ev := range events {
 			cacheItems[i] = cache.CacheItem{ID: ev.ID, CourseID: parseCourseID(ev.ContextCode), Data: ev}
 		}
 		_ = db.UpsertMany(cache.ResourceCalendarEvents, cacheItems)
-		_ = db.SetSyncMeta(cache.ResourceCalendarEvents, 0, len(cacheItems), "success")
 	}
 
 	// Sort by start time.
