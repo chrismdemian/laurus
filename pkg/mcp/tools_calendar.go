@@ -76,10 +76,10 @@ func (s *Server) handleListCalendar(ctx context.Context, _ mcplib.CallToolReques
 		}
 
 		if len(events) == 0 {
-			return mcplib.NewToolResultText("No upcoming events or deadlines."), nil
+			return liveEmpty("No upcoming events or deadlines.")
 		}
 
-		return jsonResult(events)
+		return liveResult(events)
 	}
 
 	// Date-range query using /calendar_events.
@@ -110,10 +110,10 @@ func (s *Server) handleListCalendar(ctx context.Context, _ mcplib.CallToolReques
 	}
 
 	if len(events) == 0 {
-		return mcplib.NewToolResultText("No events in the specified date range."), nil
+		return liveEmpty("No events in the specified date range.")
 	}
 
-	return jsonResult(events)
+	return liveResult(events)
 }
 
 type getTodoArgs struct{}
@@ -152,10 +152,10 @@ func (s *Server) handleGetTodo(ctx context.Context, _ mcplib.CallToolRequest, _ 
 	}
 
 	if len(results) == 0 {
-		return mcplib.NewToolResultText("No todo items."), nil
+		return liveEmpty("No todo items.")
 	}
 
-	return jsonResult(results)
+	return liveResult(results)
 }
 
 type searchCourseArgs struct {
@@ -171,7 +171,7 @@ func (s *Server) handleSearchCourse(ctx context.Context, _ mcplib.CallToolReques
 
 	if args.Course != "" {
 		// Search a single course.
-		course, err := canvas.FindCourse(ctx, client, args.Course)
+		course, err := s.findCourse(ctx, args.Course)
 		if err != nil {
 			return toolError(err)
 		}
@@ -182,10 +182,10 @@ func (s *Server) handleSearchCourse(ctx context.Context, _ mcplib.CallToolReques
 		}
 
 		if len(results) == 0 {
-			return mcplib.NewToolResultText("No results found."), nil
+			return liveEmpty("No results found.")
 		}
 
-		return jsonResult(results)
+		return liveResult(results)
 	}
 
 	// Search all active courses.
@@ -216,8 +216,8 @@ func (s *Server) handleSearchCourse(ctx context.Context, _ mcplib.CallToolReques
 	}
 
 	if len(allResults) == 0 {
-		return mcplib.NewToolResultText("No results found."), nil
+		return liveEmpty("No results found.")
 	}
 
-	return jsonResult(allResults)
+	return liveResult(allResults)
 }

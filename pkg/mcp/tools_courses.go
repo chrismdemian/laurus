@@ -7,6 +7,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/chrismdemian/laurus/internal/canvas"
+	"github.com/chrismdemian/laurus/internal/syncer"
 )
 
 func (s *Server) registerCourseTools(srv *server.MCPServer) {
@@ -16,6 +17,7 @@ func (s *Server) registerCourseTools(srv *server.MCPServer) {
 			mcplib.WithBoolean("include_completed",
 				mcplib.Description("Include completed/past courses (default: active only)"),
 			),
+			freshArg(),
 		),
 		mcplib.NewTypedToolHandler(s.handleListCourses),
 	)
@@ -34,23 +36,18 @@ func (s *Server) registerCourseTools(srv *server.MCPServer) {
 
 type listCoursesArgs struct {
 	IncludeCompleted bool `json:"include_completed"`
+	Fresh            bool `json:"fresh"`
 }
 
+// list_courses carries grades, so it sits on the 5-minute tier even though
+// course identity would be fine for a day.
 func (s *Server) handleListCourses(ctx context.Context, _ mcplib.CallToolRequest, args listCoursesArgs) (*mcplib.CallToolResult, error) {
-	client, err := s.getClient()
+	courses, env, err := s.cachedCourses(ctx, tierGrade, args.Fresh)
 	if err != nil {
 		return toolError(err)
-	}
-
-	opts := canvas.CourseListOptions{
-		Include: []string{"enrollments", "total_scores"},
 	}
 	if !args.IncludeCompleted {
-		opts.EnrollmentState = "active"
-	}
-	courses, err := collectIter(canvas.ListCourses(ctx, client, opts))
-	if err != nil {
-		return toolError(err)
+		courses = syncer.ActiveCourses(courses)
 	}
 
 	type courseSummary struct {
@@ -88,7 +85,8 @@ func (s *Server) handleListCourses(ctx context.Context, _ mcplib.CallToolRequest
 		summaries = append(summaries, cs)
 	}
 
-	return jsonResult(summaries)
+	env.Data = summaries
+	return jsonResult(env)
 }
 
 type getCourseArgs struct {
@@ -96,16 +94,15 @@ type getCourseArgs struct {
 }
 
 func (s *Server) handleGetCourse(ctx context.Context, _ mcplib.CallToolRequest, args getCourseArgs) (*mcplib.CallToolResult, error) {
+	course, err := s.findCourse(ctx, args.Course)
+	if err != nil {
+		return toolError(err)
+	}
+
 	client, err := s.getClient()
 	if err != nil {
 		return toolError(err)
 	}
-
-	course, err := canvas.FindCourse(ctx, client, args.Course)
-	if err != nil {
-		return toolError(err)
-	}
-
 	full, err := canvas.GetCourse(ctx, client, course.ID, []string{"syllabus_body", "teachers", "enrollments", "total_scores"})
 	if err != nil {
 		return toolError(err)
@@ -147,5 +144,5 @@ func (s *Server) handleGetCourse(ctx context.Context, _ mcplib.CallToolRequest, 
 		}
 	}
 
-	return jsonResult(detail)
+	return liveResult(detail)
 }

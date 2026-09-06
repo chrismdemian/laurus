@@ -183,7 +183,7 @@ func (s *Server) handleSubmitAssignment(ctx context.Context, _ mcplib.CallToolRe
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
@@ -269,7 +269,7 @@ func (s *Server) handleCreateTodo(ctx context.Context, _ mcplib.CallToolRequest,
 	}
 
 	if args.Course != "" {
-		course, err := canvas.FindCourse(ctx, client, args.Course)
+		course, err := s.findCourse(ctx, args.Course)
 		if err != nil {
 			return toolError(err)
 		}
@@ -314,7 +314,7 @@ func (s *Server) handleMarkModuleItemDone(ctx context.Context, _ mcplib.CallTool
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
@@ -343,7 +343,7 @@ func (s *Server) handleListOfficeHours(ctx context.Context, _ mcplib.CallToolReq
 	}
 
 	if args.Course != "" {
-		course, err := canvas.FindCourse(ctx, client, args.Course)
+		course, err := s.findCourse(ctx, args.Course)
 		if err != nil {
 			return toolError(err)
 		}
@@ -364,7 +364,7 @@ func (s *Server) handleListOfficeHours(ctx context.Context, _ mcplib.CallToolReq
 		return mcplib.NewToolResultText("No available office hours found."), nil
 	}
 
-	return jsonResult(groups)
+	return liveResult(groups)
 }
 
 type bookOfficeHoursArgs struct {

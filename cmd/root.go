@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -140,7 +141,18 @@ func init() {
 		return auth.Load(canvasURL)
 	}
 
+	// One client per process (memoised on success) so a single rate limiter
+	// governs every request the process makes.
+	var clientOnce struct {
+		mu sync.Mutex
+		c  *canvas.Client
+	}
 	f.Client = func() (*canvas.Client, error) {
+		clientOnce.mu.Lock()
+		defer clientOnce.mu.Unlock()
+		if clientOnce.c != nil {
+			return clientOnce.c, nil
+		}
 		cfg, err := f.Config()
 		if err != nil {
 			return nil, err
@@ -152,7 +164,8 @@ func init() {
 		if err != nil {
 			return nil, fmt.Errorf("auth failed: %w", err)
 		}
-		return canvas.NewClient(cfg.CanvasURL, td.Token, f.Version), nil
+		clientOnce.c = canvas.NewClient(cfg.CanvasURL, td.Token, f.Version)
+		return clientOnce.c, nil
 	}
 
 	f.Cache = func() (*cache.DB, error) {

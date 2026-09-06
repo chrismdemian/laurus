@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/chrismdemian/laurus/internal/canvas"
+	"github.com/chrismdemian/laurus/internal/syncer"
 	"github.com/chrismdemian/laurus/pkg/grade"
 )
 
@@ -19,6 +20,7 @@ func (s *Server) registerGradeTools(srv *server.MCPServer) {
 			mcplib.WithBoolean("include_completed",
 				mcplib.Description("Include completed/past courses"),
 			),
+			freshArg(),
 		),
 		mcplib.NewTypedToolHandler(s.handleListGrades),
 	)
@@ -60,23 +62,17 @@ func (s *Server) registerGradeTools(srv *server.MCPServer) {
 
 type listGradesArgs struct {
 	IncludeCompleted bool `json:"include_completed"`
+	Fresh            bool `json:"fresh"`
 }
 
+// list_grades reads course totals from the cache on the 5-minute tier.
 func (s *Server) handleListGrades(ctx context.Context, _ mcplib.CallToolRequest, args listGradesArgs) (*mcplib.CallToolResult, error) {
-	client, err := s.getClient()
+	courses, env, err := s.cachedCourses(ctx, tierGrade, args.Fresh)
 	if err != nil {
 		return toolError(err)
-	}
-
-	opts := canvas.CourseListOptions{
-		Include: []string{"enrollments", "total_scores"},
 	}
 	if !args.IncludeCompleted {
-		opts.EnrollmentState = "active"
-	}
-	courses, err := collectIter(canvas.ListCourses(ctx, client, opts))
-	if err != nil {
-		return toolError(err)
+		courses = syncer.ActiveCourses(courses)
 	}
 
 	type courseGrade struct {
@@ -114,7 +110,8 @@ func (s *Server) handleListGrades(ctx context.Context, _ mcplib.CallToolRequest,
 		results = append(results, cg)
 	}
 
-	return jsonResult(results)
+	env.Data = results
+	return jsonResult(env)
 }
 
 type getGradesArgs struct {
@@ -127,7 +124,7 @@ func (s *Server) handleGetGrades(ctx context.Context, _ mcplib.CallToolRequest, 
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
@@ -144,7 +141,7 @@ func (s *Server) handleGetGrades(ctx context.Context, _ mcplib.CallToolRequest, 
 	inputs := convertToGradeInputs(groups)
 	result := grade.Calculate(inputs, full.ApplyAssignmentGroupWeights, scheme)
 
-	return jsonResult(formatGradeResult(full, groups, result))
+	return liveResult(formatGradeResult(full, groups, result))
 }
 
 type calculateWhatIfArgs struct {
@@ -161,7 +158,7 @@ func (s *Server) handleCalculateWhatIf(ctx context.Context, _ mcplib.CallToolReq
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
@@ -190,7 +187,7 @@ func (s *Server) handleCalculateWhatIf(ctx context.Context, _ mcplib.CallToolReq
 		After  gradeOutput `json:"after"`
 	}
 
-	return jsonResult(whatIfResult{
+	return liveResult(whatIfResult{
 		Before: formatGradeResult(full, groups, baseline),
 		After:  formatGradeResult(full, groups, result),
 	})

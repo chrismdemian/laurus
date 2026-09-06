@@ -2,12 +2,12 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
 )
 
@@ -19,6 +19,7 @@ func (s *Server) registerPageTools(srv *server.MCPServer) {
 				mcplib.Required(),
 				mcplib.Description("Course name, code, or ID"),
 			),
+			freshArg(),
 		),
 		mcplib.NewTypedToolHandler(s.handleListPages),
 	)
@@ -41,20 +42,26 @@ func (s *Server) registerPageTools(srv *server.MCPServer) {
 
 type listPagesArgs struct {
 	Course string `json:"course"`
+	Fresh  bool   `json:"fresh"`
 }
 
+// list_pages is cache-first on the 4-hour tier; get_page (the body) is live.
 func (s *Server) handleListPages(ctx context.Context, _ mcplib.CallToolRequest, args listPagesArgs) (*mcplib.CallToolResult, error) {
-	client, err := s.getClient()
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
-	if err != nil {
-		return toolError(err)
-	}
-
-	pages, err := collectIter(canvas.ListPages(ctx, client, course.ID, canvas.ListPagesOptions{}))
+	var pages []canvas.Page
+	env, err := s.read(ctx, readSpec{rt: cache.ResourcePages, courseID: course.ID, ttl: tierStable, fresh: args.Fresh}, &pages, func() error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+		got, err := collectIter(canvas.ListPages(ctx, client, course.ID, canvas.ListPagesOptions{}))
+		pages = got
+		return err
+	})
 	if err != nil {
 		return toolError(err)
 	}
@@ -76,11 +83,8 @@ func (s *Server) handleListPages(ctx context.Context, _ mcplib.CallToolRequest, 
 		})
 	}
 
-	if len(results) == 0 {
-		return mcplib.NewToolResultText(fmt.Sprintf("No pages found in %s.", course.CourseCode)), nil
-	}
-
-	return jsonResult(results)
+	env.Data = results
+	return jsonResult(env)
 }
 
 type getPageArgs struct {
@@ -94,7 +98,7 @@ func (s *Server) handleGetPage(ctx context.Context, _ mcplib.CallToolRequest, ar
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
@@ -117,7 +121,7 @@ func (s *Server) handleGetPage(ctx context.Context, _ mcplib.CallToolRequest, ar
 		body = htmlToMarkdown(*page.Body)
 	}
 
-	return jsonResult(pageDetail{
+	return liveResult(pageDetail{
 		PageID:  page.PageID,
 		Title:   page.Title,
 		URL:     page.URL,

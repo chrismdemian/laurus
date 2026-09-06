@@ -2,12 +2,12 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
 )
 
@@ -19,6 +19,7 @@ func (s *Server) registerFileTools(srv *server.MCPServer) {
 				mcplib.Required(),
 				mcplib.Description("Course name, code, or ID"),
 			),
+			freshArg(),
 		),
 		mcplib.NewTypedToolHandler(s.handleListFiles),
 	)
@@ -41,20 +42,27 @@ func (s *Server) registerFileTools(srv *server.MCPServer) {
 
 type listFilesArgs struct {
 	Course string `json:"course"`
+	Fresh  bool   `json:"fresh"`
 }
 
+// list_files is cache-first on the 1-hour tier for metadata only. Download
+// URLs expire, so they are not served from cache: use get_file for one.
 func (s *Server) handleListFiles(ctx context.Context, _ mcplib.CallToolRequest, args listFilesArgs) (*mcplib.CallToolResult, error) {
-	client, err := s.getClient()
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
-	if err != nil {
-		return toolError(err)
-	}
-
-	files, err := collectIter(canvas.ListFiles(ctx, client, course.ID, canvas.ListFilesOptions{}))
+	var files []canvas.File
+	env, err := s.read(ctx, readSpec{rt: cache.ResourceFiles, courseID: course.ID, ttl: tierFiles, fresh: args.Fresh}, &files, func() error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+		got, err := collectIter(canvas.ListFiles(ctx, client, course.ID, canvas.ListFilesOptions{}))
+		files = got
+		return err
+	})
 	if err != nil {
 		return toolError(err)
 	}
@@ -65,7 +73,6 @@ func (s *Server) handleListFiles(ctx context.Context, _ mcplib.CallToolRequest, 
 		Size        int64     `json:"size"`
 		ContentType string    `json:"content_type"`
 		UpdatedAt   time.Time `json:"updated_at"`
-		URL         string    `json:"url"`
 	}
 
 	results := make([]fileSummary, 0, len(files))
@@ -76,15 +83,12 @@ func (s *Server) handleListFiles(ctx context.Context, _ mcplib.CallToolRequest, 
 			Size:        f.Size,
 			ContentType: f.ContentType,
 			UpdatedAt:   f.UpdatedAt,
-			URL:         f.URL,
 		})
 	}
 
-	if len(results) == 0 {
-		return mcplib.NewToolResultText(fmt.Sprintf("No files found in %s.", course.CourseCode)), nil
-	}
-
-	return jsonResult(results)
+	env.Note = "download URLs are not cached; call get_file for a fresh one"
+	env.Data = results
+	return jsonResult(env)
 }
 
 type getFileArgs struct {
@@ -98,7 +102,7 @@ func (s *Server) handleGetFile(ctx context.Context, _ mcplib.CallToolRequest, ar
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
@@ -117,7 +121,7 @@ func (s *Server) handleGetFile(ctx context.Context, _ mcplib.CallToolRequest, ar
 		URL         string    `json:"url"`
 	}
 
-	return jsonResult(fileDetail{
+	return liveResult(fileDetail{
 		ID:          file.ID,
 		Name:        file.DisplayName,
 		Size:        file.Size,

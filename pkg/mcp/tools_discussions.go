@@ -8,6 +8,7 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
 )
 
@@ -19,6 +20,7 @@ func (s *Server) registerDiscussionTools(srv *server.MCPServer) {
 				mcplib.Required(),
 				mcplib.Description("Course name, code, or ID"),
 			),
+			freshArg(),
 		),
 		mcplib.NewTypedToolHandler(s.handleListDiscussions),
 	)
@@ -42,20 +44,27 @@ func (s *Server) registerDiscussionTools(srv *server.MCPServer) {
 
 type listDiscussionsArgs struct {
 	Course string `json:"course"`
+	Fresh  bool   `json:"fresh"`
 }
 
+// list_discussions is cache-first on the 30-minute tier; unread counts in
+// it are therefore as of the stamp, and get_discussion is always live.
 func (s *Server) handleListDiscussions(ctx context.Context, _ mcplib.CallToolRequest, args listDiscussionsArgs) (*mcplib.CallToolResult, error) {
-	client, err := s.getClient()
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
-	if err != nil {
-		return toolError(err)
-	}
-
-	topics, err := collectIter(canvas.ListDiscussionTopics(ctx, client, course.ID, canvas.ListDiscussionTopicsOptions{}))
+	var topics []canvas.DiscussionTopic
+	env, err := s.read(ctx, readSpec{rt: cache.ResourceDiscussions, courseID: course.ID, ttl: tierActivity, fresh: args.Fresh}, &topics, func() error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+		got, err := collectIter(canvas.ListDiscussionTopics(ctx, client, course.ID, canvas.ListDiscussionTopicsOptions{}))
+		topics = got
+		return err
+	})
 	if err != nil {
 		return toolError(err)
 	}
@@ -89,11 +98,8 @@ func (s *Server) handleListDiscussions(ctx context.Context, _ mcplib.CallToolReq
 		})
 	}
 
-	if len(results) == 0 {
-		return mcplib.NewToolResultText("No discussion topics found."), nil
-	}
-
-	return jsonResult(results)
+	env.Data = results
+	return jsonResult(env)
 }
 
 type getDiscussionArgs struct {
@@ -107,7 +113,7 @@ func (s *Server) handleGetDiscussion(ctx context.Context, _ mcplib.CallToolReque
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
@@ -178,7 +184,7 @@ func (s *Server) handleGetDiscussion(ctx context.Context, _ mcplib.CallToolReque
 		detail.Message = htmlToMarkdown(*topic.Message)
 	}
 
-	return jsonResult(detail)
+	return liveResult(detail)
 }
 
 type replyToDiscussionArgs struct {
@@ -193,7 +199,7 @@ func (s *Server) handleReplyToDiscussion(ctx context.Context, _ mcplib.CallToolR
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}

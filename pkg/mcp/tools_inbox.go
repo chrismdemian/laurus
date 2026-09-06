@@ -90,10 +90,10 @@ func (s *Server) handleListInbox(ctx context.Context, _ mcplib.CallToolRequest, 
 	}
 
 	if len(results) == 0 {
-		return mcplib.NewToolResultText("No conversations found."), nil
+		return liveEmpty("No conversations found.")
 	}
 
-	return jsonResult(results)
+	return liveResult(results)
 }
 
 type getUnreadCountArgs struct{}
@@ -109,7 +109,7 @@ func (s *Server) handleGetUnreadCount(ctx context.Context, _ mcplib.CallToolRequ
 		return toolError(err)
 	}
 
-	return mcplib.NewToolResultText(fmt.Sprintf("You have %d unread message(s).", count)), nil
+	return liveResult(map[string]any{"unread_count": count})
 }
 
 type sendMessageArgs struct {
@@ -127,7 +127,7 @@ func (s *Server) handleSendMessage(ctx context.Context, _ mcplib.CallToolRequest
 
 	var contextCode string
 	if args.Course != "" {
-		course, err := canvas.FindCourse(ctx, client, args.Course)
+		course, err := s.findCourse(ctx, args.Course)
 		if err != nil {
 			return toolError(err)
 		}
@@ -208,7 +208,7 @@ func (s *Server) handleReadConversation(ctx context.Context, _ mcplib.CallToolRe
 		})
 	}
 
-	return jsonResult(out)
+	return liveResult(out)
 }
 
 type replyToConversationArgs struct {

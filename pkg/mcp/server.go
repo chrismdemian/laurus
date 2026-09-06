@@ -7,23 +7,43 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"sync"
+	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"golang.org/x/sync/singleflight"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
+	"github.com/chrismdemian/laurus/internal/config"
 	"github.com/chrismdemian/laurus/internal/render"
 	"github.com/chrismdemian/laurus/pkg/cmdutil"
 )
 
 // Server holds Canvas dependencies for MCP tool handlers.
 type Server struct {
-	client  func() (*canvas.Client, error)
-	version string
+	newClient func() (*canvas.Client, error)
+	newCache  func() (*cache.DB, error)
+	config    func() (*config.Config, error)
+	version   string
+
+	// One client per process so a single rate limiter governs every tool
+	// call; memoised on success only, so an auth failure before setup is
+	// retried next call.
+	clientMu sync.Mutex
+	client   *canvas.Client
+
+	cacheMu sync.Mutex
+	cache   *cache.DB
+
+	flight   singleflight.Group   // one refresh per (resource, course) at a time
+	failMu   sync.Mutex           // guards failures
+	failures map[string]time.Time // last failed refresh per resource:course
 }
 
 const (
-	instructionsBase = "Canvas LMS tools for reading courses, assignments, grades, discussions, and more. Course parameters accept names, course codes, or numeric IDs (e.g. \"CSC108\", \"csc108\", or \"12345\")."
+	instructionsBase = "Canvas LMS tools for reading courses, assignments, grades, discussions, and more. Course parameters accept names, course codes, or numeric IDs (e.g. \"CSC108\", \"csc108\", or \"12345\"). Every read returns an envelope {as_of, stale, source, data}: source is \"cache\" (served from the local sync cache, refreshed automatically when older than the tool's freshness tier) or \"live\" (fetched from Canvas just now); as_of is when the data was fetched from Canvas; stale=true means it is older than its tier or the last refresh did not complete (sync_error says why). Pass fresh=true on cache-served tools to force a refresh. Grades, inbox, todo, calendar, search and anything time-critical are always live."
 
 	instructionsReadOnly = instructionsBase + " This server is running in READ-ONLY mode: no tool can submit, post, send, book, or modify anything in Canvas. If asked to perform such an action, explain that it is not available here."
 )
@@ -34,8 +54,11 @@ const (
 // registered, so the connected model cannot see or call them.
 func NewServer(f *cmdutil.Factory, readOnly bool) *server.MCPServer {
 	s := &Server{
-		client:  f.Client,
-		version: f.Version,
+		newClient: f.Client,
+		newCache:  f.Cache,
+		config:    f.Config,
+		version:   f.Version,
+		failures:  map[string]time.Time{},
 	}
 
 	instructions := instructionsBase
@@ -68,9 +91,42 @@ func NewServer(f *cmdutil.Factory, readOnly bool) *server.MCPServer {
 	return srv
 }
 
-// getClient returns the Canvas client or an MCP error result if auth fails.
+// getClient returns the process-wide Canvas client, creating it on first
+// success.
 func (s *Server) getClient() (*canvas.Client, error) {
-	return s.client()
+	s.clientMu.Lock()
+	defer s.clientMu.Unlock()
+	if s.client != nil {
+		return s.client, nil
+	}
+	if s.newClient == nil {
+		return nil, errors.New("no Canvas client configured")
+	}
+	c, err := s.newClient()
+	if err != nil {
+		return nil, err
+	}
+	s.client = c
+	return c, nil
+}
+
+// getCache returns the process-wide cache handle, or an error when the
+// factory provides none (reads then fall back to live).
+func (s *Server) getCache() (*cache.DB, error) {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.cache != nil {
+		return s.cache, nil
+	}
+	if s.newCache == nil {
+		return nil, errors.New("cache not configured")
+	}
+	db, err := s.newCache()
+	if err != nil {
+		return nil, err
+	}
+	s.cache = db
+	return db, nil
 }
 
 // collectIter drains a paginated iterator into a slice.

@@ -31,6 +31,12 @@ func (d *DB) SetSyncMeta(resource ResourceType, courseID int64, count int, statu
 	return setSyncMeta(d.db, resource, courseID, timestamp(time.Now()), count, status, true)
 }
 
+// SetSyncMetaAt is SetSyncMeta with an explicit timestamp (tests and
+// maintenance tooling; the sync layer always stamps "now").
+func (d *DB) SetSyncMetaAt(resource ResourceType, courseID int64, at time.Time, count int, status string) error {
+	return setSyncMeta(d.db, resource, courseID, timestamp(at), count, status, true)
+}
+
 // execer is satisfied by *sql.DB and *sql.Tx.
 type execer interface {
 	Exec(query string, args ...any) (sql.Result, error)

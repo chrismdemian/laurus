@@ -7,6 +7,7 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
 )
 
@@ -18,6 +19,7 @@ func (s *Server) registerModuleTools(srv *server.MCPServer) {
 				mcplib.Required(),
 				mcplib.Description("Course name, code, or ID"),
 			),
+			freshArg(),
 		),
 		mcplib.NewTypedToolHandler(s.handleListModules),
 	)
@@ -25,23 +27,30 @@ func (s *Server) registerModuleTools(srv *server.MCPServer) {
 
 type listModulesArgs struct {
 	Course string `json:"course"`
+	Fresh  bool   `json:"fresh"`
 }
 
+// list_modules is cache-first on the 4-hour tier (stable structure). The
+// cached module rows include their items, as synced.
 func (s *Server) handleListModules(ctx context.Context, _ mcplib.CallToolRequest, args listModulesArgs) (*mcplib.CallToolResult, error) {
-	client, err := s.getClient()
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
-	if err != nil {
-		return toolError(err)
-	}
-
-	modules, err := collectIter(canvas.ListModules(ctx, client, course.ID, canvas.ListModulesOptions{
-		IncludeItems:          true,
-		IncludeContentDetails: true,
-	}))
+	var modules []canvas.Module
+	env, err := s.read(ctx, readSpec{rt: cache.ResourceModules, courseID: course.ID, ttl: tierStable, fresh: args.Fresh}, &modules, func() error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+		got, err := collectIter(canvas.ListModules(ctx, client, course.ID, canvas.ListModulesOptions{
+			IncludeItems:          true,
+			IncludeContentDetails: true,
+		}))
+		modules = got
+		return err
+	})
 	if err != nil {
 		return toolError(err)
 	}
@@ -85,9 +94,6 @@ func (s *Server) handleListModules(ctx context.Context, _ mcplib.CallToolRequest
 		results = append(results, mo)
 	}
 
-	if len(results) == 0 {
-		return mcplib.NewToolResultText("No modules found."), nil
-	}
-
-	return jsonResult(results)
+	env.Data = results
+	return jsonResult(env)
 }

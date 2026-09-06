@@ -2,13 +2,18 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
+	"github.com/chrismdemian/laurus/internal/syncer"
 )
 
 func (s *Server) registerAssignmentTools(srv *server.MCPServer) {
@@ -22,6 +27,7 @@ func (s *Server) registerAssignmentTools(srv *server.MCPServer) {
 				mcplib.Description("Filter by status"),
 				mcplib.Enum("upcoming", "overdue", "past", "undated"),
 			),
+			freshArg(),
 		),
 		mcplib.NewTypedToolHandler(s.handleListAssignments),
 	)
@@ -51,6 +57,7 @@ func (s *Server) registerAssignmentTools(srv *server.MCPServer) {
 				mcplib.Required(),
 				mcplib.Description("Assignment name or ID"),
 			),
+			freshArg(),
 		),
 		mcplib.NewTypedToolHandler(s.handleGetAssignment),
 	)
@@ -110,50 +117,90 @@ func toAssignmentSummary(a canvas.Assignment, courseName string, courseID int64)
 type listAssignmentsArgs struct {
 	Course string `json:"course"`
 	Status string `json:"status"`
+	Fresh  bool   `json:"fresh"`
 }
 
+// bucketMatches applies Canvas's bucket filter names to a cached assignment
+// the way the server would (approximately; the server also considers
+// lock dates for "past").
+func bucketMatches(a canvas.Assignment, bucket string) bool {
+	st := assignmentStatus(a)
+	now := time.Now()
+	switch strings.ToLower(strings.TrimSpace(bucket)) {
+	case "":
+		return true
+	case "upcoming", "future":
+		return st == "upcoming"
+	case "overdue":
+		return st == "overdue" || st == "missing"
+	case "unsubmitted":
+		return st == "upcoming" || st == "overdue" || st == "missing"
+	case "past":
+		return a.DueAt != nil && a.DueAt.Before(now)
+	case "undated":
+		return a.DueAt == nil
+	case "ungraded":
+		return st == "submitted"
+	default:
+		return st == strings.ToLower(bucket)
+	}
+}
+
+// list_assignments is cache-first on the 5-minute tier (submissions carry
+// scores). One course reads that course's cached assignments; no course
+// reads every active course's.
 func (s *Server) handleListAssignments(ctx context.Context, _ mcplib.CallToolRequest, args listAssignmentsArgs) (*mcplib.CallToolResult, error) {
-	client, err := s.getClient()
-	if err != nil {
-		return toolError(err)
+	var courses []canvas.Course
+	if args.Course != "" {
+		course, err := s.findCourse(ctx, args.Course)
+		if err != nil {
+			return toolError(err)
+		}
+		courses = []canvas.Course{course}
+	} else {
+		all, _, err := s.cachedCourses(ctx, tierIdentity, false)
+		if err != nil {
+			return toolError(err)
+		}
+		courses = syncer.ActiveCourses(all)
 	}
 
 	var results []assignmentSummary
-
-	if args.Course != "" {
-		// Single course path
-		course, err := canvas.FindCourse(ctx, client, args.Course)
+	env := envelope{Source: sourceCache}
+	var oldest time.Time
+	var notes []string
+	for _, c := range courses {
+		var assignments []canvas.Assignment
+		cenv, err := s.read(ctx, readSpec{rt: cache.ResourceAssignments, courseID: c.ID, ttl: tierGrade, fresh: args.Fresh}, &assignments, func() error {
+			client, err := s.getClient()
+			if err != nil {
+				return err
+			}
+			got, err := collectIter(canvas.ListAssignments(ctx, client, c.ID, canvas.ListAssignmentsOptions{Include: []string{"submission"}}))
+			assignments = got
+			return err
+		})
 		if err != nil {
-			return toolError(err)
+			if len(courses) == 1 {
+				return toolError(err)
+			}
+			notes = append(notes, fmt.Sprintf("%s: %v", c.CourseCode, err))
+			continue
 		}
-		opts := canvas.ListAssignmentsOptions{
-			Include: []string{"submission"},
-			Bucket:  args.Status,
+		if cenv.Stale {
+			env.Stale = true
 		}
-		assignments, err := collectIter(canvas.ListAssignments(ctx, client, course.ID, opts))
-		if err != nil {
-			return toolError(err)
+		if cenv.SyncError != "" {
+			notes = append(notes, fmt.Sprintf("%s: %s", c.CourseCode, cenv.SyncError))
+		}
+		if cenv.Source == sourceLive {
+			env.Source = sourceLive
+		}
+		if oldest.IsZero() || cenv.AsOf.Before(oldest) {
+			oldest = cenv.AsOf
 		}
 		for _, a := range assignments {
-			results = append(results, toAssignmentSummary(a, course.CourseCode, course.ID))
-		}
-	} else {
-		// All courses — REST is faster because the server filters by bucket/status.
-		courses, err := collectIter(canvas.ListCourses(ctx, client, canvas.CourseListOptions{
-			EnrollmentState: "active",
-		}))
-		if err != nil {
-			return toolError(err)
-		}
-		for _, c := range courses {
-			assignments, err := collectIter(canvas.ListAssignments(ctx, client, c.ID, canvas.ListAssignmentsOptions{
-				Include: []string{"submission"},
-				Bucket:  args.Status,
-			}))
-			if err != nil {
-				continue
-			}
-			for _, a := range assignments {
+			if bucketMatches(a, args.Status) {
 				results = append(results, toAssignmentSummary(a, c.CourseCode, c.ID))
 			}
 		}
@@ -170,7 +217,15 @@ func (s *Server) handleListAssignments(ctx context.Context, _ mcplib.CallToolReq
 		return results[i].DueAt.Before(*results[j].DueAt)
 	})
 
-	return jsonResult(results)
+	env.AsOf = oldest
+	if oldest.IsZero() {
+		env.AsOf = time.Now().UTC()
+	}
+	if len(notes) > 0 {
+		env.SyncError = strings.Join(notes, "; ")
+	}
+	env.Data = results
+	return jsonResult(env)
 }
 
 type getNextAssignmentArgs struct{}
@@ -205,7 +260,7 @@ func (s *Server) handleGetNextAssignment(ctx context.Context, _ mcplib.CallToolR
 		}
 	}
 
-	return mcplib.NewToolResultText("No upcoming assignments found."), nil
+	return liveEmpty("No upcoming assignments found.")
 }
 
 type listOverdueArgs struct{}
@@ -243,36 +298,56 @@ func (s *Server) handleListOverdue(ctx context.Context, _ mcplib.CallToolRequest
 	}
 
 	if len(results) == 0 {
-		return mcplib.NewToolResultText("No overdue or missing assignments."), nil
+		return liveEmpty("No overdue or missing assignments.")
 	}
 
-	return jsonResult(results)
+	return liveResult(results)
 }
 
 type getAssignmentArgs struct {
 	Course     string `json:"course"`
 	Assignment string `json:"assignment"`
+	Fresh      bool   `json:"fresh"`
 }
 
+// get_assignment serves the cached assignment (5-minute tier; the sync
+// includes the submission). A name that does not match the cache falls
+// back to the live resolver.
 func (s *Server) handleGetAssignment(ctx context.Context, _ mcplib.CallToolRequest, args getAssignmentArgs) (*mcplib.CallToolResult, error) {
-	client, err := s.getClient()
+	course, err := s.findCourse(ctx, args.Course)
 	if err != nil {
 		return toolError(err)
 	}
 
-	course, err := canvas.FindCourse(ctx, client, args.Course)
+	var assignments []canvas.Assignment
+	env, err := s.read(ctx, readSpec{rt: cache.ResourceAssignments, courseID: course.ID, ttl: tierGrade, fresh: args.Fresh}, &assignments, func() error {
+		client, err := s.getClient()
+		if err != nil {
+			return err
+		}
+		got, err := collectIter(canvas.ListAssignments(ctx, client, course.ID, canvas.ListAssignmentsOptions{Include: []string{"submission"}}))
+		assignments = got
+		return err
+	})
 	if err != nil {
 		return toolError(err)
 	}
 
-	assignment, err := canvas.FindAssignment(ctx, client, course.ID, args.Assignment)
-	if err != nil {
-		return toolError(err)
-	}
-
-	full, err := canvas.GetAssignment(ctx, client, course.ID, assignment.ID, []string{"submission"})
-	if err != nil {
-		return toolError(err)
+	full, ok := matchAssignment(assignments, args.Assignment)
+	if !ok {
+		client, err := s.getClient()
+		if err != nil {
+			return toolError(err)
+		}
+		found, err := canvas.FindAssignment(ctx, client, course.ID, args.Assignment)
+		if err != nil {
+			return toolError(err)
+		}
+		full, err = canvas.GetAssignment(ctx, client, course.ID, found.ID, []string{"submission"})
+		if err != nil {
+			return toolError(err)
+		}
+		env = envelope{AsOf: time.Now().UTC(), Source: sourceLive}
 	}
 
 	type assignmentDetail struct {
@@ -309,5 +384,30 @@ func (s *Server) handleGetAssignment(ctx context.Context, _ mcplib.CallToolReque
 		detail.Grade = full.Submission.Grade
 	}
 
-	return jsonResult(detail)
+	env.Data = detail
+	return jsonResult(env)
+}
+
+// matchAssignment mirrors canvas.FindAssignment's precedence over a cached
+// list: numeric ID, exact name, then name substring (case-insensitive).
+func matchAssignment(assignments []canvas.Assignment, query string) (canvas.Assignment, bool) {
+	if id, err := strconv.ParseInt(strings.TrimSpace(query), 10, 64); err == nil {
+		for _, a := range assignments {
+			if a.ID == id {
+				return a, true
+			}
+		}
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	for _, a := range assignments {
+		if strings.EqualFold(a.Name, query) {
+			return a, true
+		}
+	}
+	for _, a := range assignments {
+		if strings.Contains(strings.ToLower(a.Name), q) {
+			return a, true
+		}
+	}
+	return canvas.Assignment{}, false
 }
