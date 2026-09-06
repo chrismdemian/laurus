@@ -106,6 +106,20 @@ laurus mcp serve               # add --read-only to hide every tool that writes 
 
 Works with Claude Desktop, Claude Code, Symphony, Cursor, and any MCP-compatible client. The same config format applies to all of them.
 
+Reads are **cache-first with an honest stamp**: every tool result is an
+envelope `{as_of, stale, source, data}` where `source` is `cache` (served
+from the local sync cache, refreshed automatically when older than the
+tool's freshness tier: 5 min for anything carrying grades, 30 min for
+announcements and discussions, 1 h for file metadata, 4 h for modules and
+pages) or `live` (fetched just now). Time-critical tools (next assignment,
+overdue, calendar, todo, search, office hours, inbox, unread count,
+reading a conversation, grade calculations) are always live. Pass
+`fresh: true` to any cache-served tool to force a refresh, call
+`laurus_sync` to refresh everything and get the error list, and use
+`search_local_files` to grep the course files you downloaded with
+`laurus sync files` or `laurus download-all` (their contents are treated
+as untrusted text).
+
 ### Grade Calculator
 
 The first tool to match Canvas's exact grade calculation algorithm: weighted groups, drop-lowest rules (Kane & Kane bisection), extra credit, excused assignments. No more broken third-party calculators.
