@@ -41,7 +41,7 @@ func (s *Server) registerLocalFileTools(srv *server.MCPServer) {
 				mcplib.Description("Case-insensitive keyword or phrase to look for in file names and text contents"),
 			),
 			mcplib.WithString("course",
-				mcplib.Description("Limit to one course's folder (course code as it appears under the sync directory, e.g. \"ECE253\")"),
+				mcplib.Description("Limit to one folder under the sync directory, given as its relative path, e.g. \"ECE253\" or \"_modules/ECE253\" (download-all output lives under _modules/<COURSE>)"),
 			),
 			mcplib.WithNumber("max_results",
 				mcplib.Description(fmt.Sprintf("Maximum matches to return (default 20, hard cap %d)", searchMaxResults)),
@@ -127,13 +127,19 @@ func (s *Server) handleSearchLocalFiles(_ context.Context, _ mcplib.CallToolRequ
 
 	start := root
 	if args.Course != "" {
-		// A course argument is a single directory name; it cannot climb.
-		start = filepath.Join(root, pathsafe.Name(args.Course))
-		if err := pathsafe.Within(root, start); err != nil {
+		// A relative folder path; every component is sanitised so it cannot
+		// climb, and the result must still lie under the root.
+		parts := pathsafe.Components(args.Course)
+		if len(parts) == 0 {
 			return mcplib.NewToolResultError("invalid course folder"), nil
 		}
+		joined, err := pathsafe.Join(root, parts...)
+		if err != nil {
+			return mcplib.NewToolResultError("invalid course folder"), nil
+		}
+		start = joined
 		if info, err := os.Lstat(start); err != nil || !info.IsDir() {
-			return mcplib.NewToolResultError(fmt.Sprintf("no folder for %q under %s", args.Course, root)), nil
+			return mcplib.NewToolResultError(fmt.Sprintf("no folder %q under %s", filepath.Join(parts...), root)), nil
 		}
 	}
 

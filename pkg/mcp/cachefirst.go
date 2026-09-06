@@ -96,12 +96,9 @@ func (s *Server) read(ctx context.Context, spec readSpec, dest any, live func() 
 	}
 	var syncErr error
 	if s.needsRefresh(meta, spec) {
-		res := s.refresh(ctx, spec.rt, spec.courseID)
-		if res.Err != nil && res.Status == cache.StatusFailed {
-			syncErr = res.Err
-		} else if res.Err != nil {
-			syncErr = res.Err // truncated: rows stored, previous set still served
-		}
+		// A failed refresh or a truncated one (rows stored, previous complete
+		// set still served) both surface as sync_error on the envelope.
+		syncErr = s.refresh(ctx, spec.rt, spec.courseID).Err
 		meta, err = db.GetSyncMeta(spec.rt, spec.courseID)
 		if err != nil {
 			return envelope{}, fmt.Errorf("reading sync state: %w", err)
@@ -142,8 +139,11 @@ func (s *Server) needsRefresh(meta cache.SyncMeta, spec readSpec) bool {
 	if spec.fresh {
 		return true
 	}
-	if meta.Status == cache.StatusFailed && time.Since(meta.LastAttemptAt) < backoffAfterFailure {
-		return false // backing off after a recorded failure
+	if (meta.Status == cache.StatusFailed || meta.Status == cache.StatusSuspect) && time.Since(meta.LastAttemptAt) < backoffAfterFailure {
+		// Backing off after a recorded failure, or after a truncated fetch
+		// (a persistently truncating endpoint must not cost a request per
+		// read; the previous complete set is served meanwhile).
+		return false
 	}
 	if meta.LastSyncAt.IsZero() {
 		return true // never synced

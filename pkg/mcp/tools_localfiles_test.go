@@ -102,15 +102,29 @@ func TestSearchLocalFiles(t *testing.T) {
 		t.Errorf("skipped = %d, want at least the two symlinks", rep.Skipped)
 	}
 
-	// Course filter narrows to one folder.
+	// Course filter narrows to one folder, including a nested path such as
+	// the download-all layout (_modules/<COURSE>).
 	rep, _ = runSearch(t, s, searchLocalFilesArgs{Query: "midterm", Course: "ESC203"})
 	if len(rep.Matches) != 1 || rep.Matches[0].Path != filepath.Join("ESC203", "syllabus.md") {
 		t.Errorf("course filter: %+v", rep.Matches)
 	}
+	rep, _ = runSearch(t, s, searchLocalFilesArgs{Query: "boolean", Course: "ECE253/Week 1"})
+	if len(rep.Matches) != 1 || rep.Matches[0].Path != filepath.Join("ECE253", "Week 1", "notes.md") {
+		t.Errorf("nested course filter: %+v", rep.Matches)
+	}
 
-	// A traversal in course cannot escape the root: it becomes a plain (missing) folder name.
-	if _, res := runSearch(t, s, searchLocalFilesArgs{Query: "midterm", Course: "../outside"}); res == nil || !res.IsError {
-		t.Error("traversal course must be refused")
+	// Traversal in course cannot escape the root, in any spelling.
+	for _, bad := range []string{"../outside", "ECE253/../../outside", "/", "..", "ECE253/../.."} {
+		rep, res := runSearch(t, s, searchLocalFilesArgs{Query: "midterm", Course: bad})
+		if res != nil && res.IsError {
+			continue
+		}
+		// "ECE253/../.." sanitises to ECE253: allowed, but must stay inside.
+		for _, m := range rep.Matches {
+			if strings.Contains(m.Path, "outside") || strings.Contains(m.Path, "secret") {
+				t.Errorf("course %q leaked %s", bad, m.Path)
+			}
+		}
 	}
 
 	// Result cap is honoured and reported.

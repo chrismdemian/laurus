@@ -369,3 +369,39 @@ func TestBackoff_CrossProcessAndSyncToolReportsIt(t *testing.T) {
 		t.Errorf("after recovery read = %+v", env)
 	}
 }
+
+// A suspect (truncated) resource is served from the previous complete set
+// and not re-fetched on every read; after the backoff it is retried.
+func TestCacheFirst_SuspectBacksOff(t *testing.T) {
+	f := newFakeCanvas(t)
+	s := newTestServer(t, f)
+	ctx := context.Background()
+	res, _ := s.handleListAssignments(ctx, mcplib.CallToolRequest{}, listAssignmentsArgs{Course: "CSC108"})
+	decodeEnvelope(t, res)
+	db, _ := s.getCache()
+	// Simulate a truncated sync moments ago: status suspect, attempt just now.
+	if err := db.SetSyncMetaAt(cache.ResourceAssignments, 1, time.Now(), 1, cache.StatusSuspect); err != nil {
+		t.Fatal(err)
+	}
+	before := f.count("assignment_groups")
+	for i := 0; i < 3; i++ {
+		res, _ = s.handleListAssignments(ctx, mcplib.CallToolRequest{}, listAssignmentsArgs{Course: "CSC108"})
+		if env := decodeEnvelope(t, res); !env.Stale || env.SyncStatus != cache.StatusSuspect {
+			t.Errorf("read %d: %+v; want stale suspect", i, env)
+		}
+	}
+	if f.count("assignment_groups") != before {
+		t.Errorf("suspect resource was re-fetched inside the backoff window")
+	}
+	// Age the attempt past the window: the next read retries and recovers.
+	if err := db.SetSyncMetaAt(cache.ResourceAssignments, 1, time.Now().Add(-backoffAfterFailure-time.Second), 1, cache.StatusSuspect); err != nil {
+		t.Fatal(err)
+	}
+	res, _ = s.handleListAssignments(ctx, mcplib.CallToolRequest{}, listAssignmentsArgs{Course: "CSC108"})
+	if env := decodeEnvelope(t, res); env.Stale || env.SyncStatus != cache.StatusSuccess {
+		t.Errorf("after backoff: %+v", env)
+	}
+	if f.count("assignment_groups") != before+1 {
+		t.Errorf("expected exactly one retry after the backoff window")
+	}
+}
