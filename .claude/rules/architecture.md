@@ -17,7 +17,12 @@ laurus/
 │   ├── canvas/                # Canvas LMS REST + GraphQL API client
 │   ├── config/                # Config loading (~/.config/laurus/config.toml)
 │   ├── auth/                  # Token management, OS keychain integration
-│   ├── cache/                 # SQLite cache (WAL mode, per-resource TTL)
+│   ├── cache/                 # SQLite cache (WAL, one conn per handle, ReplaceAll + ListFresh)
+│   ├── syncer/                # Per-(job, course) cache fill; shared by CLI sync and MCP
+│   ├── onboard/               # Non-interactive setup/login: resolve, TTY guard, configure
+│   ├── pathsafe/              # Sanitises Canvas-supplied names before any filesystem write
+│   ├── render/                # Canvas HTML -> markdown
+│   ├── update/                # Self-update check
 │   └── iostreams/             # Color, pager, stdout/stderr abstraction
 ├── pkg/                       # Public packages (could be imported externally)
 │   ├── cmd/                   # One package per subcommand (gh pattern)
@@ -45,11 +50,13 @@ laurus/
 - `pkg/cmd/*` → `pkg/tui/` (FORBIDDEN)
 - `pkg/mcp/` → `pkg/tui/` or `pkg/cmd/*` (FORBIDDEN)
 - `internal/*` → `pkg/*` (FORBIDDEN — internal never imports public)
+- `pkg/mcp/` → `internal/syncer` (allowed; this is how MCP refreshes the cache without importing `pkg/cmd/sync`)
 
 ## Key Design Decisions
 
 - **Per-operation GraphQL**: GraphQL only for single-course grade queries (one round-trip for groups→assignments→submissions); REST for everything else (server-side filtering makes it faster for course/assignment listing). REST always for writes and file uploads.
-- **SQLite cache with WAL**: Enables concurrent reads (CLI) while background sync writes
+- **SQLite cache with WAL**: Enables concurrent reads (CLI) while background sync writes. Pragmas live in the DSN (every connection), one connection per handle; a `*sql.Tx` holder must never call another `DB` method until it commits.
+- **Sync is per job, replaces atomically**: `cache.ReplaceAll` upserts, prunes and stamps `sync_meta` in one transaction; a truncated or empty fetch against a populated table is marked `suspect` and never prunes. Reads use `ListFresh` (rows from the last complete sync).
 - **OS keychain for tokens**: Never plaintext config files for secrets
 - **Cobra subcommand pattern**: One package per noun (matches gh CLI structure)
 - **Bubble Tea Elm Architecture**: Model/Update/View for TUI, hard separation from domain logic
