@@ -39,6 +39,24 @@ func (d *DB) SetSyncMetaAt(resource ResourceType, courseID int64, at time.Time, 
 	return setSyncMeta(d.db, resource, courseID, timestamp(at), count, status, true)
 }
 
+// RecordSkipped marks (resource, courseID) as refused by Canvas (403/404).
+// When the course already has cached rows the freshness stamp is NOT
+// advanced, mirroring the truncation guard: a throttle or a temporarily
+// disabled tab must not hide a whole tier's worth of real data behind an
+// empty set. With no rows the empty set is the truth and the stamp advances.
+// It returns the number of rows kept.
+func (d *DB) RecordSkipped(resource ResourceType, courseID int64) (int, error) {
+	existing := 0
+	if validTable(resource) {
+		n, err := d.Count(resource, courseID)
+		if err != nil {
+			return 0, err
+		}
+		existing = n
+	}
+	return existing, setSyncMeta(d.db, resource, courseID, timestamp(time.Now()), existing, StatusSkipped, existing == 0)
+}
+
 // execer is satisfied by *sql.DB and *sql.Tx.
 type execer interface {
 	Exec(query string, args ...any) (sql.Result, error)

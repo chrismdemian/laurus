@@ -123,10 +123,17 @@ func (s *Server) read(ctx context.Context, spec readSpec, dest any, live func() 
 		return envelope{}, errors.New("no cached data and the refresh produced none")
 	}
 	if meta.Status == cache.StatusSkipped {
-		// Canvas said forbidden/not found for this resource of this course:
-		// an empty set is the truthful answer, re-checked once per tier.
+		if meta.ItemCount > 0 {
+			// Refused on the last refresh but rows from an earlier complete
+			// sync exist: serve them, flagged, rather than an empty set.
+			env.Stale = true
+			env.Note = "Canvas refused this resource on the last refresh (forbidden/not found); serving the previous set"
+			return env, nil
+		}
+		// Canvas said forbidden/not found and nothing was ever cached: an
+		// empty set is the truthful answer, re-checked once per tier.
 		env.Note = "this course does not expose this resource (Canvas returned forbidden/not found)"
-		env.Stale = time.Since(meta.LastSyncAt) > spec.ttl
+		env.Stale = time.Since(meta.LastAttemptAt) > spec.ttl
 		return env, nil
 	}
 	if syncErr != nil {
@@ -150,13 +157,19 @@ func (s *Server) needsRefresh(meta cache.SyncMeta, spec readSpec) bool {
 		// read; the previous complete set is served meanwhile).
 		return false
 	}
+	switch meta.Status {
+	case cache.StatusSkipped:
+		// Skipped (403/404) is re-checked once per tier, not on every read,
+		// so a course with a disabled tab does not cost a request per call.
+		// Keyed on the attempt stamp: a skip over existing rows does not
+		// advance last_sync_at.
+		return time.Since(meta.LastAttemptAt) > spec.ttl
+	}
 	if meta.LastSyncAt.IsZero() {
 		return true // never synced
 	}
 	switch meta.Status {
-	case cache.StatusSuccess, cache.StatusSkipped:
-		// Skipped (403/404) is re-checked once per tier, not on every read,
-		// so a course with a disabled tab does not cost a request per call.
+	case cache.StatusSuccess:
 		return time.Since(meta.LastSyncAt) > spec.ttl
 	default:
 		return true // suspect or failed: try to complete the set
@@ -173,7 +186,16 @@ func (s *Server) needsRefresh(meta cache.SyncMeta, spec readSpec) bool {
 // once with that error while the refresh completes in the background.
 func (s *Server) refresh(ctx context.Context, rt cache.ResourceType, courseID int64) syncer.Result {
 	key := string(rt) + ":" + strconv.FormatInt(courseID, 10)
-	ch := s.flight.DoChan(key, func() (any, error) {
+	ch := s.flight.DoChan(key, func() (v any, err error) {
+		// A panic inside a DoChan fn is re-raised by singleflight on a FRESH
+		// goroutine, where no handler-level recovery (mcp-go WithRecovery)
+		// can catch it: the whole server process would die. Recover here
+		// and hand the waiters a failed Result instead.
+		defer func() {
+			if r := recover(); r != nil {
+				v, err = syncer.Result{Status: cache.StatusFailed, Err: fmt.Errorf("refresh panicked: %v", r)}, nil
+			}
+		}()
 		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
 		defer cancel()
 		client, err := s.getClient()

@@ -173,10 +173,12 @@ func SyncJob(ctx context.Context, client *canvas.Client, db *cache.DB, job Job, 
 	}
 	if skipped {
 		for _, t := range tables {
-			if err := db.SetSyncMeta(t, courseID, 0, cache.StatusSkipped); err != nil {
+			kept, err := db.RecordSkipped(t, courseID)
+			if err != nil {
 				res.Status, res.Err = cache.StatusFailed, fmt.Errorf("recording skip: %w", err)
 				return res
 			}
+			res.Count += kept
 		}
 		res.Status = cache.StatusSkipped
 		return res

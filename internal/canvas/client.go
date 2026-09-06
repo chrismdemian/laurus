@@ -2,6 +2,7 @@
 package canvas
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -63,6 +64,20 @@ func NewClient(baseURL, token, version string) *Client {
 	retryClient.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
 		if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
 			return true, nil
+		}
+		if resp != nil && resp.StatusCode == http.StatusForbidden {
+			// Canvas throttling is a 403 with "Rate Limit Exceeded" in the
+			// body. Peek at (a bounded prefix of) the body and put it back so
+			// a non-retried 403 still reaches parseErrorResponse intact;
+			// retryablehttp drains the body itself when it does retry.
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			rest, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			resp.Body = io.NopCloser(io.MultiReader(bytes.NewReader(b), bytes.NewReader(rest)))
+			if isThrottled403(resp.Header, b) {
+				return true, nil
+			}
+			return false, nil
 		}
 		return retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 	}

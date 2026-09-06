@@ -17,9 +17,13 @@ paths:
 - `rel="next"` absent = last page; `rel="last"` may be omitted on expensive endpoints
 - A `rel="next"` with an EMPTY URL is a confirmed intermittent Canvas bug: `Paginate` yields the items it has, then `ErrPaginationTruncated`. Never treat that partial set as complete (the cache marks it `suspect` and does not prune)
 
+## Announcements
+- `GET /announcements` needs `context_codes[]`; `end_date` defaults to 28 days AFTER `start_date`, so an old `start_date` alone is an EMPTY window (0 rows for courses holding dozens). `canvas.ListAnnouncements` sends a far-future `end_date` whenever `StartDate` is set without `EndDate`
+
 ## Rate Limiting
 - Watch `X-Rate-Limit-Remaining` header on every response
 - On 429: exponential backoff with jitter
+- Throttling is ALSO answered as HTTP 403 with body "Rate Limit Exceeded" and `X-Rate-Limit-Remaining` <= 0 (not 429). `isThrottled403` maps it to `ErrRateLimited` and the client retries it; a plain 403 stays `ErrForbidden` and is never retried
 - Sequential requests virtually never throttle; avoid parallel fan-out
 - Each token has its own independent quota bucket
 

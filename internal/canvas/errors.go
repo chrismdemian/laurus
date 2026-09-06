@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -60,7 +61,11 @@ func parseErrorResponse(statusCode int, body []byte, headers http.Header) error 
 			sentinel = ErrPermissionDenied
 		}
 	case http.StatusForbidden:
-		sentinel = ErrForbidden
+		if isThrottled403(headers, body) {
+			sentinel = ErrRateLimited
+		} else {
+			sentinel = ErrForbidden
+		}
 	case http.StatusNotFound:
 		sentinel = ErrNotFound
 	case http.StatusTooManyRequests:
@@ -82,6 +87,19 @@ func parseErrorResponse(statusCode int, body []byte, headers http.Header) error 
 	}
 
 	return &APIError{StatusCode: statusCode, Message: msg}
+}
+
+// isThrottled403 recognises Canvas throttling, which answers HTTP 403 (not
+// 429) with the body "Rate Limit Exceeded" and X-Rate-Limit-Remaining at or
+// below zero. It must be retried and must never be mistaken for a
+// permissions failure (a sync would record the resource as skipped).
+func isThrottled403(headers http.Header, body []byte) bool {
+	if v := strings.TrimSpace(headers.Get("X-Rate-Limit-Remaining")); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil && n <= 0 {
+			return true
+		}
+	}
+	return strings.Contains(strings.ToLower(string(body)), "rate limit exceeded")
 }
 
 // rawEnvelope captures all possible Canvas error JSON shapes.
