@@ -172,13 +172,16 @@ const (
 // row of that course whose id is not in items, and stamp sync_meta. Callers
 // must not swallow the error: a failed ReplaceAll leaves the previous state.
 //
-// Truncation guard: when opts.Truncated is set, or the fetch came back empty
-// while rows exist, the fetched rows are stored but nothing is deleted and
-// last_sync_at is NOT advanced, so ListFresh keeps serving the previous
-// complete set and sync_meta.status reads "suspect". One flaky page can
-// therefore never wipe a course. A genuine shrink to zero is handled on the
-// next successful fetch, which is also empty and then prunes because the
-// table is already empty.
+// Truncation guard: when opts.Truncated is set the fetched rows are stored
+// but nothing is deleted and last_sync_at is NOT advanced, so ListFresh
+// keeps serving the previous complete set and sync_meta.status reads
+// "suspect". A truncated page can therefore never wipe a course.
+//
+// An empty fetch WITHOUT a truncation error is taken at its word: every row
+// of the course is pruned, because upstream deleting everything (all
+// announcements removed, a course's pages cleared) is a real state that a
+// reader must see. The residual is a Canvas 200 with an empty body and no
+// pagination fault; that wipes the course's rows until the next refresh.
 func (d *DB) ReplaceAll(table ResourceType, courseID int64, items []CacheItem, opts ReplaceOptions) (string, error) {
 	if !validTable(table) {
 		return "", fmt.Errorf("%w: %s", errInvalidTable, table)
@@ -191,11 +194,7 @@ func (d *DB) ReplaceAll(table ResourceType, courseID int64, items []CacheItem, o
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var existing int
-	if err := tx.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE course_id = ?", table), courseID).Scan(&existing); err != nil {
-		return "", fmt.Errorf("counting %s: %w", table, err)
-	}
-	suspect := opts.Truncated || (len(items) == 0 && existing > 0)
+	suspect := opts.Truncated
 
 	if len(items) > 0 {
 		stmt, err := tx.Prepare(

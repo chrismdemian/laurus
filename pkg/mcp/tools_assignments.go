@@ -158,7 +158,9 @@ func (s *Server) handleListAssignments(ctx context.Context, _ mcplib.CallToolReq
 		}
 		courses = []canvas.Course{course}
 	} else {
-		all, _, err := s.cachedCourses(ctx, tierIdentity, false)
+		// Enumerated on the 5-minute tier (and fresh is honoured) so a new
+		// enrolment shows up promptly instead of after the 24 h identity tier.
+		all, _, err := s.cachedCourses(ctx, tierGrade, args.Fresh)
 		if err != nil {
 			return toolError(err)
 		}
@@ -222,6 +224,9 @@ func (s *Server) handleListAssignments(ctx context.Context, _ mcplib.CallToolReq
 		env.AsOf = time.Now().UTC()
 	}
 	if len(notes) > 0 {
+		// A course whose data is missing or whose refresh failed makes the
+		// whole aggregate incomplete, hence stale.
+		env.Stale = true
 		env.SyncError = strings.Join(notes, "; ")
 	}
 	env.Data = results
@@ -256,7 +261,7 @@ func (s *Server) handleGetNextAssignment(ctx context.Context, _ mcplib.CallToolR
 				PointsPossible: a.PointsPossible,
 				HTMLURL:        e.HTMLURL,
 			}
-			return jsonResult(result)
+			return liveResult(result)
 		}
 	}
 

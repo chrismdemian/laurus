@@ -111,7 +111,8 @@ envelope `{as_of, stale, source, data}` where `source` is `cache` (served
 from the local sync cache, refreshed automatically when older than the
 tool's freshness tier: 5 min for anything carrying grades, 30 min for
 announcements and discussions, 1 h for file metadata, 4 h for modules and
-pages) or `live` (fetched just now). Time-critical tools (next assignment,
+pages), `live` (fetched just now), or `local` (`search_local_files`: read
+from the downloaded files on disk, no Canvas call). Time-critical tools (next assignment,
 overdue, calendar, todo, search, office hours, inbox, unread count,
 reading a conversation, grade calculations) are always live. Pass
 `fresh: true` to any cache-served tool to force a refresh, call

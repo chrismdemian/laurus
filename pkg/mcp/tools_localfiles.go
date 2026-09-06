@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -261,12 +262,12 @@ func matchFile(path, rel string, info fs.FileInfo, query string) (localFileMatch
 	for sc.Scan() {
 		line++
 		text := sc.Text()
-		idx := strings.Index(strings.ToLower(text), q)
+		idx := foldIndex(text, q)
 		if idx < 0 {
 			continue
 		}
 		m.Line = line
-		m.Snippet = snippet(text, idx, len(query))
+		m.Snippet = snippet(text, idx)
 		if nameHit {
 			m.Where = "name+content"
 		} else {
@@ -281,9 +282,44 @@ func matchFile(path, rel string, info fs.FileInfo, query string) (localFileMatch
 	return m, false
 }
 
-// snippet returns the matching line trimmed around the hit, capped in runes.
-func snippet(text string, idx, qlen int) string {
-	text = strings.TrimSpace(text)
+// foldIndex returns the byte offset IN text of the first case-insensitive
+// occurrence of q (already lower-cased), or -1. Lower-casing can change the
+// byte length of a rune (U+023A is 2 bytes, its lower-case U+2C65 is 3), so
+// an index found in strings.ToLower(text) must never be used to slice text;
+// this maps each lowered byte back to the original offset instead.
+func foldIndex(text, q string) int {
+	if q == "" {
+		return 0
+	}
+	var b strings.Builder
+	b.Grow(len(text))
+	offs := make([]int, 0, len(text)+1)
+	for i, r := range text {
+		start := b.Len()
+		b.WriteRune(unicode.ToLower(r))
+		for j := start; j < b.Len(); j++ {
+			offs = append(offs, i)
+		}
+	}
+	idx := strings.Index(b.String(), q)
+	if idx < 0 {
+		return -1
+	}
+	return offs[idx]
+}
+
+// snippet returns the matching line trimmed around the hit at byte offset
+// idx OF text (not of any transformed copy), capped in runes.
+func snippet(text string, idx int) string {
+	trimmed := strings.TrimSpace(text)
+	idx -= strings.Index(text, trimmed)
+	text = trimmed
+	if idx < 0 {
+		idx = 0
+	}
+	if idx > len(text) {
+		idx = len(text)
+	}
 	if utf8.RuneCountInString(text) <= searchMaxSnippetRune {
 		return text
 	}
@@ -306,6 +342,5 @@ func snippet(text string, idx, qlen int) string {
 	if startB+len(res) < len(text) {
 		res += "…"
 	}
-	_ = qlen
 	return res
 }

@@ -86,7 +86,7 @@ func (s *Server) handleListAnnouncements(ctx context.Context, _ mcplib.CallToolR
 		}
 		courses = []canvas.Course{course}
 	} else {
-		all, _, err := s.cachedCourses(ctx, tierIdentity, false)
+		all, _, err := s.cachedCourses(ctx, tierGrade, args.Fresh)
 		if err != nil {
 			return toolError(err)
 		}
@@ -148,6 +148,7 @@ func (s *Server) handleListAnnouncements(ctx context.Context, _ mcplib.CallToolR
 		env.AsOf = time.Now().UTC()
 	}
 	if len(notes) > 0 {
+		env.Stale = true // a course is missing or its refresh failed
 		env.SyncError = strings.Join(notes, "; ")
 	}
 	if results == nil {

@@ -480,9 +480,9 @@ func TestTTL(t *testing.T) {
 
 // TestReplaceAll_Sequence exercises the truncation guard end to end:
 // 10 rows synced; 3 rows + truncation gives 10 back and status suspect;
-// a full 10 again clears it; 9 (a real deletion) gives 9; an empty fetch
-// against a populated table is suspect (kept), and the meta stamp only
-// advances on complete syncs.
+// a full 10 again clears it; 9 (a real deletion) gives 9; an honest empty
+// fetch against a populated table prunes everything (upstream deleted it),
+// and the meta stamp only advances on complete syncs.
 func TestReplaceAll_Sequence(t *testing.T) {
 	db := testDB(t)
 	mk := func(ids ...int64) []CacheItem {
@@ -530,12 +530,17 @@ func TestReplaceAll_Sequence(t *testing.T) {
 		t.Errorf("after truncated sync: meta %+v, want suspect with unchanged stamp %v", meta, firstStamp)
 	}
 
+	time.Sleep(1100 * time.Millisecond)
 	status, err = db.ReplaceAll(ResourceAssignments, 100, nil, ReplaceOptions{})
-	if err != nil || status != StatusSuspect {
-		t.Fatalf("empty fetch on populated table: status=%s err=%v", status, err)
+	if err != nil || status != StatusSuccess {
+		t.Fatalf("honest empty fetch on populated table: status=%s err=%v", status, err)
 	}
-	if got, _ = fresh(); len(got) != 10 {
-		t.Errorf("after empty fetch: %d rows, want 10", len(got))
+	got, meta = fresh()
+	if len(got) != 0 || meta.Status != StatusSuccess || !meta.LastSyncAt.After(firstStamp) {
+		t.Errorf("after honest empty fetch: %d rows, meta %+v; want 0 rows, success, advanced stamp", len(got), meta)
+	}
+	if n, _ := db.Count(ResourceAssignments, 100); n != 0 {
+		t.Errorf("table rows = %d after honest empty fetch, want 0 (pruned)", n)
 	}
 
 	time.Sleep(1100 * time.Millisecond)

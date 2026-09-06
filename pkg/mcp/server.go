@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"iter"
 	"sync"
-	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -37,13 +36,11 @@ type Server struct {
 	cacheMu sync.Mutex
 	cache   *cache.DB
 
-	flight   singleflight.Group   // one refresh per (resource, course) at a time
-	failMu   sync.Mutex           // guards failures
-	failures map[string]time.Time // last failed refresh per resource:course
+	flight singleflight.Group // one refresh per (resource, course) at a time
 }
 
 const (
-	instructionsBase = "Canvas LMS tools for reading courses, assignments, grades, discussions, and more. Course parameters accept names, course codes, or numeric IDs (e.g. \"CSC108\", \"csc108\", or \"12345\"). Every read returns an envelope {as_of, stale, source, data}: source is \"cache\" (served from the local sync cache, refreshed automatically when older than the tool's freshness tier) or \"live\" (fetched from Canvas just now); as_of is when the data was fetched from Canvas; stale=true means it is older than its tier or the last refresh did not complete (sync_error says why). Pass fresh=true on cache-served tools to force a refresh. Grades, inbox, todo, calendar, search and anything time-critical are always live."
+	instructionsBase = "Canvas LMS tools for reading courses, assignments, grades, discussions, and more. Course parameters accept names, course codes, or numeric IDs (e.g. \"CSC108\", \"csc108\", or \"12345\"). Every read returns an envelope {as_of, stale, source, data}: source is \"cache\" (served from the local sync cache, refreshed automatically when older than the tool's freshness tier) or \"live\" (fetched from Canvas just now) or \"local\" (search_local_files: read from the files on this machine's disk, no Canvas call); as_of is when the data was fetched from Canvas; stale=true means it is older than its tier or the last refresh did not complete (sync_error says why). Pass fresh=true on cache-served tools to force a refresh. Grades, inbox, todo, calendar, search and anything time-critical are always live."
 
 	instructionsReadOnly = instructionsBase + " This server is running in READ-ONLY mode: no tool can submit, post, send, book, or modify anything in Canvas. If asked to perform such an action, explain that it is not available here."
 )

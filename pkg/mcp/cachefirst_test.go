@@ -98,7 +98,7 @@ func newTestServer(t *testing.T, f *fakeCanvas) *Server {
 		},
 		Cache: func() (*cache.DB, error) { return db, nil },
 	}
-	s := &Server{newClient: factory.Client, newCache: factory.Cache, config: factory.Config, version: "test", failures: map[string]time.Time{}}
+	s := &Server{newClient: factory.Client, newCache: factory.Cache, config: factory.Config, version: "test"}
 	t.Cleanup(func() {
 		if n := atomic.LoadInt32(&clients); n > 1 {
 			t.Errorf("client constructed %d times; must be memoised", n)

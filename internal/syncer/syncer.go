@@ -187,7 +187,14 @@ func SyncJob(ctx context.Context, client *canvas.Client, db *cache.DB, job Job, 
 	for _, t := range tables {
 		st, err := db.ReplaceAll(t, courseID, perTable[t].items, opts)
 		if err != nil {
+			// Recorded like a fetch failure so readers back off instead of
+			// re-fetching Canvas on every call while the cache is contended.
 			res.Status, res.Err = cache.StatusFailed, fmt.Errorf("caching %s: %w", t, err)
+			for _, rt := range tables {
+				if rerr := db.RecordSyncFailure(rt, courseID, res.Err); rerr != nil {
+					res.Err = fmt.Errorf("%w (and recording the failure: %v)", res.Err, rerr)
+				}
+			}
 			return res
 		}
 		if st == cache.StatusSuspect {

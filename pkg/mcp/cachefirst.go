@@ -33,6 +33,11 @@ const (
 // so it holds across processes. fresh=true bypasses it.
 const backoffAfterFailure = 2 * time.Minute
 
+// refreshTimeout bounds one detached refresh. The Canvas client has no
+// overall HTTP timeout of its own, and a refresh outlives the caller that
+// started it (see refresh), so it needs its own ceiling.
+const refreshTimeout = 5 * time.Minute
+
 // envelope wraps every read so the model can never mistake cached data for
 // live data: as_of is when the data was fetched from Canvas, stale says the
 // data is older than its tier or the last sync did not complete, source is
@@ -159,10 +164,18 @@ func (s *Server) needsRefresh(meta cache.SyncMeta, spec readSpec) bool {
 }
 
 // refresh runs the sync job for (rt, courseID) exactly once per concurrent
-// burst (singleflight) and records failures for backoff.
+// burst (singleflight); the sync layer records failures for backoff.
+//
+// The sync runs on a context detached from the caller's: the flight is
+// shared by every caller in the burst, so the first caller giving up must
+// not cancel it and stamp a context-canceled failure (and a 2-minute
+// backoff) onto everyone else. A caller whose own context ends returns at
+// once with that error while the refresh completes in the background.
 func (s *Server) refresh(ctx context.Context, rt cache.ResourceType, courseID int64) syncer.Result {
 	key := string(rt) + ":" + strconv.FormatInt(courseID, 10)
-	v, _, _ := s.flight.Do(key, func() (any, error) {
+	ch := s.flight.DoChan(key, func() (any, error) {
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+		defer cancel()
 		client, err := s.getClient()
 		if err != nil {
 			return syncer.Result{Status: cache.StatusFailed, Err: err}, nil
@@ -171,10 +184,15 @@ func (s *Server) refresh(ctx context.Context, rt cache.ResourceType, courseID in
 		if err != nil {
 			return syncer.Result{Status: cache.StatusFailed, Err: err}, nil
 		}
-		return syncer.SyncResource(ctx, client, db, rt, courseID), nil
+		return syncer.SyncResource(fctx, client, db, rt, courseID), nil
 	})
-	res, _ := v.(syncer.Result)
-	return res
+	select {
+	case r := <-ch:
+		res, _ := r.Val.(syncer.Result)
+		return res
+	case <-ctx.Done():
+		return syncer.Result{Status: cache.StatusFailed, Err: ctx.Err()}
+	}
 }
 
 // cachedCourses returns the course list from the cache (identity tier),

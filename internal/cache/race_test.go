@@ -51,6 +51,14 @@ func TestConcurrentWrites_TwoHandles(t *testing.T) {
 				if err := db.SetSyncMeta(ResourceAssignments, int64(w), i, "success"); err != nil {
 					errs <- err
 				}
+				// ReplaceAll on a per-writer course: the read-then-write
+				// transaction shape that only BEGIN IMMEDIATE makes safe
+				// across handles (this was the C1 hole: UpsertMany alone
+				// passed while ReplaceAll failed half the time).
+				own := []CacheItem{{ID: id, CourseID: int64(1000 + w), Data: testAssignment{ID: id, CourseID: int64(1000 + w)}}}
+				if _, err := db.ReplaceAll(ResourceAnnouncements, int64(1000+w), own, ReplaceOptions{}); err != nil {
+					errs <- err
+				}
 			}
 		}(w)
 	}

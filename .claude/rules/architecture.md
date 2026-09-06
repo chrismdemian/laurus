@@ -56,7 +56,7 @@ laurus/
 
 - **Per-operation GraphQL**: GraphQL only for single-course grade queries (one round-trip for groups→assignments→submissions); REST for everything else (server-side filtering makes it faster for course/assignment listing). REST always for writes and file uploads.
 - **SQLite cache with WAL**: Enables concurrent reads (CLI) while background sync writes. Pragmas live in the DSN (every connection), one connection per handle; a `*sql.Tx` holder must never call another `DB` method until it commits.
-- **Sync is per job, replaces atomically**: `cache.ReplaceAll` upserts, prunes and stamps `sync_meta` in one transaction; a truncated or empty fetch against a populated table is marked `suspect` and never prunes. Reads use `ListFresh` (rows from the last complete sync).
+- **Sync is per job, replaces atomically**: `cache.ReplaceAll` upserts, prunes and stamps `sync_meta` in one transaction; a truncated fetch is marked `suspect` and never prunes; an honest empty fetch prunes (upstream deleted everything). Every tx is `BEGIN IMMEDIATE` (`_txlock=immediate` in the DSN) so cross-process read-then-write never hits an unretryable SQLITE_BUSY. Reads use `ListFresh` (rows from the last complete sync).
 - **OS keychain for tokens**: Never plaintext config files for secrets
 - **Cobra subcommand pattern**: One package per noun (matches gh CLI structure)
 - **Bubble Tea Elm Architecture**: Model/Update/View for TUI, hard separation from domain logic

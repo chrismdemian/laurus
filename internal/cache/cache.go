@@ -95,6 +95,13 @@ func dsn(path string) string {
 	for _, p := range connPragmas {
 		q.Add("_pragma", p)
 	}
+	// Every transaction this package opens is a writer, so BEGIN IMMEDIATE
+	// takes the write lock up front and waits busy_timeout for it. A
+	// DEFERRED tx that reads first and then writes cannot be upgraded once
+	// another process has committed in between: SQLite returns SQLITE_BUSY
+	// immediately (busy_timeout is not consulted for a snapshot upgrade),
+	// which is what made half of all cross-process ReplaceAll calls fail.
+	q.Set("_txlock", "immediate")
 	// The driver strips the query itself, so the path is passed verbatim
 	// (spaces included, e.g. ~/Library/Application Support/laurus).
 	return "file:" + path + "?" + q.Encode()

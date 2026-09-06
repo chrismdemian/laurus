@@ -204,28 +204,36 @@ var migrations = []string{
 }
 
 // migrate applies pending schema migrations using PRAGMA user_version.
+//
+// The version is read INSIDE each write transaction (BEGIN IMMEDIATE via the
+// DSN), so two processes opening an old file at once serialise on the lock
+// and the second one re-reads the version the first already advanced
+// instead of replaying the same ALTER TABLE ("duplicate column").
 func migrate(db *sql.DB) error {
-	var currentVersion int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&currentVersion); err != nil {
-		return fmt.Errorf("reading schema version: %w", err)
-	}
-
-	for i := currentVersion; i < len(migrations); i++ {
+	for {
 		tx, err := db.Begin()
 		if err != nil {
-			return fmt.Errorf("beginning migration %d: %w", i+1, err)
+			return fmt.Errorf("beginning migration: %w", err)
 		}
-		if _, err := tx.Exec(migrations[i]); err != nil {
+		var v int
+		if err := tx.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("migration %d failed: %w", i+1, err)
+			return fmt.Errorf("reading schema version: %w", err)
 		}
-		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
+		if v >= len(migrations) {
 			_ = tx.Rollback()
-			return fmt.Errorf("setting schema version %d: %w", i+1, err)
+			return nil
+		}
+		if _, err := tx.Exec(migrations[v]); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("migration %d failed: %w", v+1, err)
+		}
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", v+1)); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("setting schema version %d: %w", v+1, err)
 		}
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("committing migration %d: %w", i+1, err)
+			return fmt.Errorf("committing migration %d: %w", v+1, err)
 		}
 	}
-	return nil
 }
