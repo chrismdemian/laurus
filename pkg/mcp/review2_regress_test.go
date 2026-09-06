@@ -3,11 +3,15 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chrismdemian/laurus/internal/cache"
 	"github.com/chrismdemian/laurus/internal/canvas"
@@ -90,5 +94,84 @@ func TestRead_SkippedOverExistingRowsServesThemStale(t *testing.T) {
 	}
 	if f.count("assignment_groups") != before {
 		t.Errorf("skipped resource re-fetched inside the tier")
+	}
+}
+
+// Rows written opportunistically by a CLI command (no sync_meta), or by a
+// truncated sync (suspect, last_sync_at NULL), then a 403 on the first MCP
+// refresh: there is no complete set to keep, so the reader must get an
+// honest empty set flagged with the skip note, not an error for a whole
+// tier.
+func TestGate_SkipOverOpportunisticRowsNoPriorSync(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/pages") {
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprint(w, `{"errors":[{"message":"user not authorized"}]}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	db, err := cache.Open(filepath.Join(t.TempDir(), "cache.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := &Server{newClient: func() (*canvas.Client, error) { return canvas.NewClient(srv.URL, "tok", "test"), nil },
+		newCache: func() (*cache.DB, error) { return db, nil }}
+
+	// Course 1: opportunistic CLI rows, no sync_meta at all.
+	if err := db.UpsertMany(cache.ResourcePages, []cache.CacheItem{{ID: 1, CourseID: 1, Data: map[string]any{"page_id": 1, "title": "Syllabus"}}}); err != nil {
+		t.Fatal(err)
+	}
+	// Course 2: rows from a truncated sync only (suspect, stamp NULL).
+	if st, err := db.ReplaceAll(cache.ResourcePages, 2, []cache.CacheItem{{ID: 2, CourseID: 2, Data: map[string]any{"page_id": 2, "title": "Week 1"}}}, cache.ReplaceOptions{Truncated: true}); err != nil || st != cache.StatusSuspect {
+		t.Fatalf("seed suspect: %s %v", st, err)
+	}
+
+	for _, courseID := range []int64{1, 2} {
+		for i := 0; i < 2; i++ { // second read is inside the tier: same outcome
+			var pages []canvas.Page
+			env, err := s.read(context.Background(), readSpec{rt: cache.ResourcePages, courseID: courseID, ttl: tierStable}, &pages, nil)
+			if err != nil {
+				t.Fatalf("course %d read %d: reader errors instead of an honest empty set: %v", courseID, i, err)
+			}
+			if len(pages) != 0 || env.SyncStatus != cache.StatusSkipped || !strings.Contains(env.Note, "forbidden") || env.Stale {
+				t.Errorf("course %d read %d: env=%+v rows=%d; want empty, skipped, noted, not stale", courseID, i, env, len(pages))
+			}
+		}
+		if meta, _ := db.GetSyncMeta(cache.ResourcePages, courseID); meta.LastSyncAt.IsZero() || meta.ItemCount != 0 {
+			t.Errorf("course %d meta = %+v; want an advanced stamp with item_count 0", courseID, meta)
+		}
+	}
+}
+
+// A panic inside the refresh fn must surface as a failed Result AND release
+// the singleflight key so the next call runs a fresh flight (in-process
+// counterpart of the child-process test above).
+func TestGate_RefreshPanicSurvivesAndReleasesKey(t *testing.T) {
+	f := newFakeCanvas(t)
+	s := newTestServer(t, f)
+	good := s.newClient
+	s.newClient = func() (*canvas.Client, error) { panic("factory exploded") }
+
+	var rows []canvas.Assignment
+	_, err := s.read(context.Background(), readSpec{rt: cache.ResourceAssignments, courseID: 1, ttl: tierGrade}, &rows, nil)
+	if err == nil || !strings.Contains(err.Error(), "refresh panicked") {
+		t.Fatalf("want a 'refresh panicked' error, got %v", err)
+	}
+	s.newClient = good
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		env, err := s.read(context.Background(), readSpec{rt: cache.ResourceAssignments, courseID: 1, ttl: tierGrade, fresh: true}, &rows, nil)
+		if err != nil || len(rows) != 1 {
+			t.Errorf("second read after panic: env=%+v rows=%d err=%v", env, len(rows), err)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("second read hung: singleflight key not released after panic")
 	}
 }

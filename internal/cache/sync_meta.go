@@ -40,11 +40,14 @@ func (d *DB) SetSyncMetaAt(resource ResourceType, courseID int64, at time.Time, 
 }
 
 // RecordSkipped marks (resource, courseID) as refused by Canvas (403/404).
-// When the course already has cached rows the freshness stamp is NOT
-// advanced, mirroring the truncation guard: a throttle or a temporarily
-// disabled tab must not hide a whole tier's worth of real data behind an
-// empty set. With no rows the empty set is the truth and the stamp advances.
-// It returns the number of rows kept.
+// When a previous COMPLETE sync exists and the course has cached rows, the
+// freshness stamp is NOT advanced, mirroring the truncation guard: a
+// throttle or a temporarily disabled tab must not hide a whole tier's worth
+// of real data behind an empty set. Otherwise (no rows, or rows that were
+// only ever written opportunistically by a CLI command or by a truncated
+// sync, so last_sync_at is still NULL) there is no complete set to keep:
+// the stamp advances with item_count 0 and readers get an honest empty set
+// instead of an error. It returns the number of rows kept.
 func (d *DB) RecordSkipped(resource ResourceType, courseID int64) (int, error) {
 	existing := 0
 	if validTable(resource) {
@@ -54,7 +57,16 @@ func (d *DB) RecordSkipped(resource ResourceType, courseID int64) (int, error) {
 		}
 		existing = n
 	}
-	return existing, setSyncMeta(d.db, resource, courseID, timestamp(time.Now()), existing, StatusSkipped, existing == 0)
+	prev, err := d.GetSyncMeta(resource, courseID)
+	if err != nil {
+		return 0, err
+	}
+	keep := existing > 0 && !prev.LastSyncAt.IsZero()
+	kept := 0
+	if keep {
+		kept = existing
+	}
+	return kept, setSyncMeta(d.db, resource, courseID, timestamp(time.Now()), kept, StatusSkipped, !keep)
 }
 
 // execer is satisfied by *sql.DB and *sql.Tx.

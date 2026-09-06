@@ -271,6 +271,12 @@ func (d *DB) ListFresh(table ResourceType, courseID int64, dest any) (SyncMeta, 
 	if !validTable(table) {
 		return meta, fmt.Errorf("%w: %s", errInvalidTable, table)
 	}
+	if meta.Status == StatusSkipped && meta.ItemCount == 0 {
+		// Refused by Canvas with no complete set kept: the fresh set is
+		// empty by definition, whatever opportunistic rows the table holds
+		// (they may share the stamp's second and would otherwise leak in).
+		return meta, nil
+	}
 	query := fmt.Sprintf("SELECT data FROM %s WHERE fetched_at >= ?", table)
 	args := []any{timestamp(meta.LastSyncAt)}
 	if meta.LastSyncAt.IsZero() {

@@ -154,8 +154,12 @@ func (s *Server) needsRefresh(meta cache.SyncMeta, spec readSpec) bool {
 	if (meta.Status == cache.StatusFailed || meta.Status == cache.StatusSuspect) && time.Since(meta.LastAttemptAt) < backoffAfterFailure {
 		// Backing off after a recorded failure, or after a truncated fetch
 		// (a persistently truncating endpoint must not cost a request per
-		// read; the previous complete set is served meanwhile).
-		return false
+		// read; the previous complete set is served meanwhile). A suspect
+		// resource with NO complete set behind it has nothing to serve, so
+		// it is retried instead of erroring for the whole backoff window.
+		if !(meta.Status == cache.StatusSuspect && meta.LastSyncAt.IsZero()) {
+			return false
+		}
 	}
 	switch meta.Status {
 	case cache.StatusSkipped:
