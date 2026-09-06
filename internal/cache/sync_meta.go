@@ -9,11 +9,13 @@ import (
 
 // SyncMeta holds metadata about when a resource type was last synced.
 type SyncMeta struct {
-	ResourceType ResourceType
-	CourseID     int64 // 0 for cross-course resources
-	LastSyncAt   time.Time
-	ItemCount    int
-	Status       string // "success", "partial", "failed"
+	ResourceType  ResourceType
+	CourseID      int64     // 0 for cross-course resources
+	LastSyncAt    time.Time // last COMPLETE sync; the as_of stamp readers show
+	LastAttemptAt time.Time // last attempt, successful or not
+	ItemCount     int
+	Status        string // StatusSuccess, StatusSuspect, StatusSkipped, StatusFailed
+	Error         string // why the last attempt failed, cleared on success
 }
 
 // IsStale returns true if the given resource needs to be re-fetched.
@@ -48,13 +50,36 @@ type execer interface {
 // keeps serving the last complete set.
 func setSyncMeta(x execer, resource ResourceType, courseID int64, at string, count int, status string, advance bool) error {
 	_, err := x.Exec(
-		`INSERT INTO sync_meta (resource_type, course_id, last_sync_at, item_count, status)
-		 VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO sync_meta (resource_type, course_id, last_sync_at, last_attempt_at, item_count, status, error)
+		 VALUES (?, ?, ?, ?, ?, ?, NULL)
 		 ON CONFLICT(resource_type, course_id) DO UPDATE SET
-		   last_sync_at = CASE WHEN ? THEN excluded.last_sync_at ELSE sync_meta.last_sync_at END,
-		   item_count   = excluded.item_count,
-		   status       = excluded.status`,
-		string(resource), courseID, nullIfNotAdvancing(at, advance), count, status, advance,
+		   last_sync_at    = CASE WHEN ? THEN excluded.last_sync_at ELSE sync_meta.last_sync_at END,
+		   last_attempt_at = excluded.last_attempt_at,
+		   item_count      = excluded.item_count,
+		   status          = excluded.status,
+		   error           = NULL`,
+		string(resource), courseID, nullIfNotAdvancing(at, advance), at, count, status, advance,
+	)
+	return err
+}
+
+// RecordSyncFailure marks the last attempt for (resource, courseID) as
+// failed with the reason. last_sync_at and item_count are untouched: the
+// previous complete set is still what readers serve, and its stamp must
+// keep telling the truth.
+func (d *DB) RecordSyncFailure(resource ResourceType, courseID int64, cause error) error {
+	msg := ""
+	if cause != nil {
+		msg = cause.Error()
+	}
+	_, err := d.db.Exec(
+		`INSERT INTO sync_meta (resource_type, course_id, last_sync_at, last_attempt_at, item_count, status, error)
+		 VALUES (?, ?, NULL, ?, 0, ?, ?)
+		 ON CONFLICT(resource_type, course_id) DO UPDATE SET
+		   last_attempt_at = excluded.last_attempt_at,
+		   status          = excluded.status,
+		   error           = excluded.error`,
+		string(resource), courseID, timestamp(time.Now()), StatusFailed, msg,
 	)
 	return err
 }
@@ -75,15 +100,15 @@ func timestamp(t time.Time) string {
 // GetSyncMeta reads sync metadata for a resource type and course.
 // Returns a zero-value SyncMeta if no entry exists.
 func (d *DB) GetSyncMeta(resource ResourceType, courseID int64) (SyncMeta, error) {
-	var lastSyncAt sql.NullString
+	var lastSyncAt, lastAttemptAt, errText sql.NullString
 	var itemCount int
 	var status string
 
 	err := d.db.QueryRow(
-		`SELECT last_sync_at, item_count, status FROM sync_meta
+		`SELECT last_sync_at, last_attempt_at, item_count, status, error FROM sync_meta
 		 WHERE resource_type = ? AND course_id = ?`,
 		string(resource), courseID,
-	).Scan(&lastSyncAt, &itemCount, &status)
+	).Scan(&lastSyncAt, &lastAttemptAt, &itemCount, &status, &errText)
 
 	if err == sql.ErrNoRows {
 		return SyncMeta{ResourceType: resource, CourseID: courseID}, nil
@@ -93,24 +118,32 @@ func (d *DB) GetSyncMeta(resource ResourceType, courseID int64) (SyncMeta, error
 	}
 
 	meta := SyncMeta{
-		ResourceType: resource,
-		CourseID:     courseID,
-		ItemCount:    itemCount,
-		Status:       status,
-	}
-	if lastSyncAt.Valid {
-		t, err := time.Parse(time.RFC3339, lastSyncAt.String)
-		if err == nil {
-			meta.LastSyncAt = t
-		}
+		ResourceType:  resource,
+		CourseID:      courseID,
+		ItemCount:     itemCount,
+		Status:        status,
+		LastSyncAt:    parseStamp(lastSyncAt),
+		LastAttemptAt: parseStamp(lastAttemptAt),
+		Error:         errText.String,
 	}
 	return meta, nil
+}
+
+func parseStamp(v sql.NullString) time.Time {
+	if !v.Valid {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339, v.String)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
 
 // AllSyncMeta returns all sync_meta entries.
 func (d *DB) AllSyncMeta() ([]SyncMeta, error) {
 	rows, err := d.db.Query(
-		`SELECT resource_type, course_id, last_sync_at, item_count, status
+		`SELECT resource_type, course_id, last_sync_at, last_attempt_at, item_count, status, error
 		 FROM sync_meta ORDER BY resource_type, course_id`,
 	)
 	if err != nil {
@@ -122,27 +155,23 @@ func (d *DB) AllSyncMeta() ([]SyncMeta, error) {
 	for rows.Next() {
 		var rt string
 		var courseID int64
-		var lastSyncAt sql.NullString
+		var lastSyncAt, lastAttemptAt, errText sql.NullString
 		var itemCount int
 		var status string
 
-		if err := rows.Scan(&rt, &courseID, &lastSyncAt, &itemCount, &status); err != nil {
+		if err := rows.Scan(&rt, &courseID, &lastSyncAt, &lastAttemptAt, &itemCount, &status, &errText); err != nil {
 			return nil, err
 		}
 
-		meta := SyncMeta{
-			ResourceType: ResourceType(rt),
-			CourseID:     courseID,
-			ItemCount:    itemCount,
-			Status:       status,
-		}
-		if lastSyncAt.Valid {
-			t, err := time.Parse(time.RFC3339, lastSyncAt.String)
-			if err == nil {
-				meta.LastSyncAt = t
-			}
-		}
-		metas = append(metas, meta)
+		metas = append(metas, SyncMeta{
+			ResourceType:  ResourceType(rt),
+			CourseID:      courseID,
+			ItemCount:     itemCount,
+			Status:        status,
+			LastSyncAt:    parseStamp(lastSyncAt),
+			LastAttemptAt: parseStamp(lastAttemptAt),
+			Error:         errText.String,
+		})
 	}
 	return metas, rows.Err()
 }

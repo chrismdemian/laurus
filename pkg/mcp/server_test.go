@@ -33,6 +33,7 @@ var readToolNames = []string{
 	"list_discussions",
 	"list_office_hours",
 	"get_todo",
+	"laurus_sync", // reads Canvas, writes only the local cache: allowed read-only
 }
 
 func testFactory() *cmdutil.Factory {

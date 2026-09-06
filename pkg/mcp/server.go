@@ -58,7 +58,6 @@ func NewServer(f *cmdutil.Factory, readOnly bool) *server.MCPServer {
 		newCache:  f.Cache,
 		config:    f.Config,
 		version:   f.Version,
-		failures:  map[string]time.Time{},
 	}
 
 	instructions := instructionsBase
@@ -84,6 +83,7 @@ func NewServer(f *cmdutil.Factory, readOnly bool) *server.MCPServer {
 	s.registerFileTools(srv)
 	s.registerPageTools(srv)
 	s.registerCalendarTools(srv)
+	s.registerSyncTools(srv)
 	if !readOnly {
 		s.registerWriteTools(srv)
 	}

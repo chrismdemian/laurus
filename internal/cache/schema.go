@@ -190,9 +190,17 @@ CREATE TABLE IF NOT EXISTS notifications_sent (
 );
 `
 
+// migrationV3 records failed sync attempts separately from the last
+// complete sync, so readers can back off without lying about as_of.
+const migrationV3 = `
+ALTER TABLE sync_meta ADD COLUMN last_attempt_at TEXT;
+ALTER TABLE sync_meta ADD COLUMN error TEXT;
+`
+
 var migrations = []string{
 	migrationV1,
 	migrationV2,
+	migrationV3,
 }
 
 // migrate applies pending schema migrations using PRAGMA user_version.

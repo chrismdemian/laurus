@@ -115,6 +115,7 @@ func SyncCourses(ctx context.Context, client *canvas.Client, db *cache.DB) ([]ca
 		for c, err := range canvas.ListCourses(ctx, client, q) {
 			if err != nil {
 				res.Status, res.Err = cache.StatusFailed, fmt.Errorf("listing courses: %w", err)
+				_ = db.RecordSyncFailure(cache.ResourceCourses, 0, res.Err)
 				return nil, res
 			}
 			if seen[c.ID] {
@@ -157,6 +158,11 @@ func SyncJob(ctx context.Context, client *canvas.Client, db *cache.DB, job Job, 
 	perTable, err := fetchJob(ctx, client, job, courseID)
 	if err != nil {
 		res.Status, res.Err = cache.StatusFailed, err
+		for _, t := range tables {
+			if rerr := db.RecordSyncFailure(t, courseID, err); rerr != nil {
+				res.Err = fmt.Errorf("%w (and recording the failure: %v)", err, rerr)
+			}
+		}
 		return res
 	}
 

@@ -32,7 +32,10 @@ func fakeCanvas(t *testing.T) *httptest.Server {
 			fmt.Fprint(w, `{"errors":[{"message":"forbidden"}]}`)
 		case strings.HasSuffix(p, "/modules"):
 			fmt.Fprint(w, `[{"id":3,"name":"Week 1","items":[{"id":31,"title":"Slides"},{"id":32,"title":"Reading"}]}]`)
-		case strings.HasSuffix(p, "/discussion_topics"), strings.HasSuffix(p, "/files"), strings.HasSuffix(p, "/folders"):
+		case strings.HasSuffix(p, "/discussion_topics"):
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"errors":[{"message":"nope"}]}`)
+		case strings.HasSuffix(p, "/files"), strings.HasSuffix(p, "/folders"):
 			fmt.Fprint(w, `[]`)
 		case p == "/api/v1/courses":
 			switch r.URL.Query().Get("enrollment_state") {
@@ -118,6 +121,15 @@ func TestSyncJob_FillsTablesAndMarksSuspect(t *testing.T) {
 		t.Errorf("pages meta = %+v", meta)
 	}
 
+	// Discussions: hard failure -> failed, recorded with the reason, nothing stored.
+	r = SyncJob(ctx, client, db, JobDiscussions, 1)
+	if r.Status != cache.StatusFailed || r.Err == nil {
+		t.Errorf("discussions: %+v", r)
+	}
+	if meta, _ := db.GetSyncMeta(cache.ResourceDiscussions, 1); meta.Status != cache.StatusFailed || meta.Error == "" || meta.LastAttemptAt.IsZero() || !meta.LastSyncAt.IsZero() {
+		t.Errorf("discussions meta = %+v; want failed with error and attempt stamp, no sync stamp", meta)
+	}
+
 	// Modules: two tables from one call.
 	r = SyncJob(ctx, client, db, JobModules, 1)
 	if r.Status != cache.StatusSuccess || r.Count != 3 {
@@ -173,8 +185,8 @@ func TestSyncAll_CollectsResults(t *testing.T) {
 		t.Fatalf("results = %d, callbacks = %d, want %d", len(sum.Results), n, len(CourseJobs))
 	}
 	errs := sum.Errors()
-	if len(errs) != 1 || !strings.Contains(errs[0], "CSC108/assignment_groups") {
-		t.Errorf("errors = %v, want exactly the truncated assignment_groups job", errs)
+	if len(errs) != 2 || !strings.Contains(strings.Join(errs, "|"), "CSC108/assignment_groups") || !strings.Contains(strings.Join(errs, "|"), "CSC108/discussions") {
+		t.Errorf("errors = %v, want the truncated assignment_groups job and the failed discussions job", errs)
 	}
 	if sum.Items() != 1+2+1+1+3 {
 		t.Errorf("items = %d", sum.Items())

@@ -307,3 +307,65 @@ func TestCacheFirst_SkippedResourceIsNotRefetchedEveryRead(t *testing.T) {
 		t.Errorf("pages fetched %d times across 3 reads, want 1", n)
 	}
 }
+
+// The backoff lives in sync_meta, so a second process (a new Server on the
+// same database) honours it too, and laurus_sync reports the failure.
+func TestBackoff_CrossProcessAndSyncToolReportsIt(t *testing.T) {
+	f := newFakeCanvas(t)
+	s := newTestServer(t, f)
+	ctx := context.Background()
+	res, _ := s.handleListAssignments(ctx, mcplib.CallToolRequest{}, listAssignmentsArgs{Course: "CSC108"})
+	decodeEnvelope(t, res)
+	db, _ := s.getCache()
+	if err := db.SetSyncMetaAt(cache.ResourceAssignments, 1, time.Now().Add(-10*time.Minute), 1, cache.StatusSuccess); err != nil {
+		t.Fatal(err)
+	}
+	f.fail.Store(true)
+	res, _ = s.handleListAssignments(ctx, mcplib.CallToolRequest{}, listAssignmentsArgs{Course: "CSC108"})
+	if env := decodeEnvelope(t, res); !env.Stale || env.SyncError == "" {
+		t.Fatalf("expected stale+sync_error, got %+v", env)
+	}
+	meta, _ := db.GetSyncMeta(cache.ResourceAssignments, 1)
+	if meta.Status != cache.StatusFailed || meta.Error == "" {
+		t.Fatalf("failure not recorded in sync_meta: %+v", meta)
+	}
+
+	// A different Server sharing the database (another process) must not
+	// retry inside the window. It builds its own client, as a process would.
+	other := &Server{newClient: func() (*canvas.Client, error) { return canvas.NewClient(f.srv.URL, "tok", "test"), nil }, newCache: s.newCache, version: "test"}
+	before := f.count("assignment_groups")
+	res, _ = other.handleListAssignments(ctx, mcplib.CallToolRequest{}, listAssignmentsArgs{Course: "CSC108"})
+	if env := decodeEnvelope(t, res); !env.Stale {
+		t.Errorf("second process served non-stale data during backoff: %+v", env)
+	}
+	if f.count("assignment_groups") != before {
+		t.Errorf("second process retried Canvas during backoff")
+	}
+
+	// laurus_sync runs regardless and lists the failure with non-success status.
+	res, err := other.handleSync(ctx, mcplib.CallToolRequest{}, syncArgs{Course: "CSC108"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc := res.Content[0].(mcplib.TextContent)
+	var rep syncReport
+	if err := json.Unmarshal([]byte(tc.Text), &rep); err != nil {
+		t.Fatalf("sync report: %v\n%s", err, tc.Text)
+	}
+	if rep.Status == "success" || len(rep.Errors) == 0 {
+		t.Errorf("sync report = %+v; want non-success with errors", rep)
+	}
+
+	// Recovery through the tool clears the failure and the next read is fresh.
+	f.fail.Store(false)
+	res, _ = other.handleSync(ctx, mcplib.CallToolRequest{}, syncArgs{Course: "CSC108"})
+	tc = res.Content[0].(mcplib.TextContent)
+	_ = json.Unmarshal([]byte(tc.Text), &rep)
+	if rep.Status != "success" {
+		t.Errorf("after recovery sync report = %+v", rep)
+	}
+	res, _ = s.handleListAssignments(ctx, mcplib.CallToolRequest{}, listAssignmentsArgs{Course: "CSC108"})
+	if env := decodeEnvelope(t, res); env.Stale || env.SyncError != "" {
+		t.Errorf("after recovery read = %+v", env)
+	}
+}

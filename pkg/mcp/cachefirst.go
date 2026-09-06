@@ -27,9 +27,10 @@ const (
 )
 
 // backoffAfterFailure is how long a failed sync of a (resource, course)
-// suppresses retries so many callers cannot pile onto a broken endpoint.
-// It is read from sync_meta (phase 5 records failures there); until then
-// it only applies within a process via the in-memory table below.
+// suppresses automatic retries so many callers (and many processes: the
+// MCP server, a cron sync) cannot pile onto a broken endpoint. It is read
+// from sync_meta.last_attempt_at, which the sync layer writes on failure,
+// so it holds across processes. fresh=true bypasses it.
 const backoffAfterFailure = 2 * time.Minute
 
 // envelope wraps every read so the model can never mistake cached data for
@@ -141,8 +142,8 @@ func (s *Server) needsRefresh(meta cache.SyncMeta, spec readSpec) bool {
 	if spec.fresh {
 		return true
 	}
-	if s.inBackoff(spec.rt, spec.courseID) {
-		return false
+	if meta.Status == cache.StatusFailed && time.Since(meta.LastAttemptAt) < backoffAfterFailure {
+		return false // backing off after a recorded failure
 	}
 	if meta.LastSyncAt.IsZero() {
 		return true // never synced
@@ -170,35 +171,10 @@ func (s *Server) refresh(ctx context.Context, rt cache.ResourceType, courseID in
 		if err != nil {
 			return syncer.Result{Status: cache.StatusFailed, Err: err}, nil
 		}
-		res := syncer.SyncResource(ctx, client, db, rt, courseID)
-		if res.Status == cache.StatusFailed {
-			s.noteFailure(rt, courseID)
-		} else {
-			s.clearFailure(rt, courseID)
-		}
-		return res, nil
+		return syncer.SyncResource(ctx, client, db, rt, courseID), nil
 	})
 	res, _ := v.(syncer.Result)
 	return res
-}
-
-func (s *Server) noteFailure(rt cache.ResourceType, courseID int64) {
-	s.failMu.Lock()
-	defer s.failMu.Unlock()
-	s.failures[string(rt)+":"+strconv.FormatInt(courseID, 10)] = time.Now()
-}
-
-func (s *Server) clearFailure(rt cache.ResourceType, courseID int64) {
-	s.failMu.Lock()
-	defer s.failMu.Unlock()
-	delete(s.failures, string(rt)+":"+strconv.FormatInt(courseID, 10))
-}
-
-func (s *Server) inBackoff(rt cache.ResourceType, courseID int64) bool {
-	s.failMu.Lock()
-	defer s.failMu.Unlock()
-	at, ok := s.failures[string(rt)+":"+strconv.FormatInt(courseID, 10)]
-	return ok && time.Since(at) < backoffAfterFailure
 }
 
 // cachedCourses returns the course list from the cache (identity tier),
