@@ -269,27 +269,39 @@ claude mcp add laurus -- laurus mcp serve
 claude mcp add laurus -e CANVAS_TOKEN=... -e CANVAS_URL=https://canvas.school.edu -- laurus mcp serve
 ```
 
-`laurus mcp install --client claude-code|cursor|vscode` writes the same
-entry into the project's `.mcp.json`, `.cursor/mcp.json`, or
-`.vscode/mcp.json` (merging with what is there; `--print` to just show it).
-A `.mcp.json` that reads the token from the environment:
+`laurus mcp install --client claude-code|cursor|vscode` writes the entry
+for you, merging with the servers already there and doing nothing on a
+second run:
+
+```bash
+laurus mcp install --client claude-code                 # project: ./.mcp.json
+laurus mcp install --client claude-code --scope user    # user: ~/.claude.json (backed up to .bak first)
+laurus mcp install --client cursor --scope user         # ~/.cursor/mcp.json
+laurus mcp install --client vscode --scope user         # VS Code user mcp.json
+laurus mcp install --client vscode --read-only --print  # show the entry, write nothing
+```
+
+The entry passes `CANVAS_TOKEN` through from the environment in the
+client's own syntax (`${CANVAS_TOKEN}` for Claude Code, `${env:CANVAS_TOKEN}`
+for Cursor and VS Code), so no token is written to disk; `--no-env` drops
+that when the token is already in the keychain. The Claude Code project
+form it writes:
 
 ```json
 {
   "mcpServers": {
     "laurus": {
       "command": "laurus",
+      "type": "stdio",
       "args": ["mcp", "serve"],
-      "env": {
-        "CANVAS_TOKEN": "${CANVAS_TOKEN}",
-        "CANVAS_URL": "https://canvas.school.edu"
-      }
+      "env": { "CANVAS_TOKEN": "${CANVAS_TOKEN}" }
     }
   }
 }
 ```
 
-Add `--read-only` to the `serve` args when the assistant should never be
+Add `"CANVAS_URL": "https://canvas.school.edu"` to `env` if `laurus setup`
+was never run on that machine. Add `--read-only` to the `serve` args when the assistant should never be
 able to submit, post, send, or book anything in Canvas; the write tools are
 then not registered at all.
 
