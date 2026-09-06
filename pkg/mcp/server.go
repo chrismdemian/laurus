@@ -84,6 +84,7 @@ func NewServer(f *cmdutil.Factory, readOnly bool) *server.MCPServer {
 	s.registerPageTools(srv)
 	s.registerCalendarTools(srv)
 	s.registerSyncTools(srv)
+	s.registerLocalFileTools(srv)
 	if !readOnly {
 		s.registerWriteTools(srv)
 	}
