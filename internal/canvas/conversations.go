@@ -34,10 +34,15 @@ func ListConversations(ctx context.Context, c *Client, opts ListConversationsOpt
 }
 
 // GetConversation retrieves a single conversation with full message history.
-// Canvas auto-marks the conversation as read by default.
+//
+// Canvas marks a conversation as read when it is fetched unless
+// auto_mark_as_read=false is passed, so this always passes it: reading a
+// message through laurus must never change the user's unread state.
 func GetConversation(ctx context.Context, c *Client, conversationID int64) (Conversation, error) {
 	path := fmt.Sprintf("/api/v1/conversations/%d", conversationID)
-	return Get[Conversation](ctx, c, path, nil)
+	params := url.Values{}
+	params.Set("auto_mark_as_read", "false")
+	return Get[Conversation](ctx, c, path, params)
 }
 
 // unreadCountResponse handles the Canvas unread_count endpoint which returns a string value.
