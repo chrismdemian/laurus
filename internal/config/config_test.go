@@ -153,3 +153,40 @@ func TestLoadFrom_EmptyFile(t *testing.T) {
 		t.Errorf("SyncDir = %q, want '~/School'", cfg.SyncDir)
 	}
 }
+
+func TestLoadFrom_CanvasURLEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("canvas_url = \"https://file.example.edu\"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(EnvCanvasURL, "https://env.example.edu/")
+	cfg, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom() error: %v", err)
+	}
+	if cfg.CanvasURL != "https://env.example.edu" {
+		t.Errorf("CanvasURL = %q, want env override without trailing slash", cfg.CanvasURL)
+	}
+
+	// Missing file: env still applies, and the default file is written without it.
+	missing := filepath.Join(dir, "sub", "config.toml")
+	cfg, err = LoadFrom(missing)
+	if err != nil {
+		t.Fatalf("LoadFrom(missing) error: %v", err)
+	}
+	if cfg.CanvasURL != "https://env.example.edu" {
+		t.Errorf("CanvasURL (missing file) = %q", cfg.CanvasURL)
+	}
+
+	// Unset: the file value wins again (positive control for the override).
+	t.Setenv(EnvCanvasURL, "")
+	cfg, err = LoadFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CanvasURL != "https://file.example.edu" {
+		t.Errorf("CanvasURL without env = %q", cfg.CanvasURL)
+	}
+}

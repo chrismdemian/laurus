@@ -41,8 +41,14 @@ func NewCmdDoctor(f *cmdutil.Factory) *cobra.Command {
 		Short: "Diagnose common issues",
 		Long: `Run diagnostic checks on your Laurus configuration, authentication, cache, and Canvas connectivity.
 
+Exits non-zero when any check is FAIL (warnings alone exit zero), so scripts and
+agents can gate on it: laurus doctor --json && echo ok
+
 Use --benchmark to compare GraphQL vs REST API performance on your Canvas instance.`,
 		Args: cobra.NoArgs,
+		// A failed check is reported through the exit code (see doctorRun);
+		// printing usage on top of it would only bury the findings.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if benchmark {
 				return benchmarkRun(f)
@@ -235,14 +241,6 @@ func doctorRun(f *cmdutil.Factory) error {
 		}
 	}
 
-	// JSON output — return early, skip human summary
-	if ios.IsJSON {
-		return cmdutil.RenderJSON(ios, results)
-	}
-
-	_, _ = fmt.Fprintln(ios.Out)
-
-	// Summary
 	var warns, fails int
 	for _, r := range results {
 		switch r.Status {
@@ -252,6 +250,18 @@ func doctorRun(f *cmdutil.Factory) error {
 			fails++
 		}
 	}
+
+	// JSON output — return early, skip human summary. The exit code still
+	// reflects failures so `laurus doctor --json && ...` works.
+	if ios.IsJSON {
+		if err := cmdutil.RenderJSON(ios, results); err != nil {
+			return err
+		}
+		return failedErr(fails)
+	}
+
+	_, _ = fmt.Fprintln(ios.Out)
+
 	if fails > 0 {
 		_, _ = fmt.Fprintf(ios.ErrOut, "%d issue(s) found. See above for details.\n", fails+warns)
 	} else if warns > 0 {
@@ -260,7 +270,16 @@ func doctorRun(f *cmdutil.Factory) error {
 		_, _ = fmt.Fprintln(ios.ErrOut, "All checks passed.")
 	}
 
-	return nil
+	return failedErr(fails)
+}
+
+// failedErr turns a FAIL count into the error that gives doctor a non-zero
+// exit code; zero failures (warnings included) is a clean exit.
+func failedErr(fails int) error {
+	if fails == 0 {
+		return nil
+	}
+	return fmt.Errorf("doctor: %d check(s) failed", fails)
 }
 
 func benchmarkRun(f *cmdutil.Factory) error {

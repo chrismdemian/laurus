@@ -21,6 +21,7 @@ func NewCmdMCP(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cmd.AddCommand(newCmdServe(f))
+	cmd.AddCommand(newCmdInstall(f))
 	return cmd
 }
 

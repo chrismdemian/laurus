@@ -4,9 +4,14 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
+
+// EnvCanvasURL overrides canvas_url from config.toml when set, so a headless
+// setup needs no config file at all (pair it with CANVAS_TOKEN).
+const EnvCanvasURL = "CANVAS_URL"
 
 // Config holds all user-configurable settings.
 type Config struct {
@@ -45,6 +50,8 @@ func Load() (*Config, error) {
 
 // LoadFrom reads config from the given path.
 // If the file does not exist, it creates a default config and writes it.
+// CANVAS_URL in the environment overrides canvas_url from the file; note that
+// a later Save persists whatever value is loaded, including the override.
 func LoadFrom(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -52,6 +59,7 @@ func LoadFrom(path string) (*Config, error) {
 		if saveErr := SaveTo(&cfg, path); saveErr != nil {
 			return nil, saveErr
 		}
+		applyEnv(&cfg)
 		return &cfg, nil
 	}
 	if err != nil {
@@ -63,7 +71,14 @@ func LoadFrom(path string) (*Config, error) {
 		return nil, err
 	}
 	applyDefaults(&cfg)
+	applyEnv(&cfg)
 	return &cfg, nil
+}
+
+func applyEnv(cfg *Config) {
+	if v := os.Getenv(EnvCanvasURL); v != "" {
+		cfg.CanvasURL = strings.TrimRight(strings.TrimSpace(v), "/")
+	}
 }
 
 // Save writes config to the default path.

@@ -82,14 +82,14 @@ The daily drivers. Fast, scriptable, pipe-friendly.
 | `laurus inbox` | Read and send Canvas messages |
 | `laurus search <query>` | AI-powered semantic search across courses |
 
-Every command supports `--json` for scripting and `--cached` for offline use.
+Every command supports `--json` for scripting. `laurus status` reads only the local cache and `laurus courses --cached` serves from it; other commands are live and refresh the cache as they go.
 
 ### MCP Server Mode
 
 Plug Canvas into any AI assistant. Claude, Symphony, Cursor, OpenClaw -anything that speaks [MCP](https://modelcontextprotocol.io).
 
 ```bash
-laurus mcp serve
+laurus mcp serve               # add --read-only to hide every tool that writes to Canvas
 ```
 
 ```json
@@ -226,16 +226,72 @@ Config lives in your OS config directory:
 - **Windows**: `%AppData%\laurus\config.toml`
 
 ```toml
-[canvas]
-url = "https://q.utoronto.ca"    # your institution's Canvas URL
-
-[sync]
-dir = "~/School"                  # where to sync course files
-interval = "30m"                  # background sync interval
-
-[display]
-theme = "auto"                    # auto, dark, light
+canvas_url = "https://q.utoronto.ca"   # your institution's Canvas URL
+sync_dir = "~/School"                  # where `laurus sync files` puts course files
+theme = "auto"                         # auto, dark, light
 ```
+
+Environment variables override the file and the keychain, so a headless
+machine needs no config at all:
+
+| Variable | Overrides |
+|---|---|
+| `CANVAS_TOKEN` | the stored API token |
+| `CANVAS_URL` | `canvas_url` in config.toml |
+
+The token is stored in the OS keychain (macOS Keychain, Windows Credential
+Manager, Secret Service on Linux) with a `credentials` file next to
+config.toml as the fallback.
+
+---
+
+## Setting up with a coding agent (non-interactive)
+
+Everything below is safe to hand to an agent. The human's only inputs are
+**their Canvas API token** (Canvas > Account > Settings > New Access Token)
+and **their institution's Canvas URL**. Nothing prompts; missing values are
+an error, not a hung form.
+
+```bash
+# 1. Configure: validates the token against Canvas, stores it, saves the URL.
+laurus setup --token "$CANVAS_TOKEN" --url https://canvas.school.edu --yes
+
+# Same, keeping the token out of argv and shell history:
+echo "$CANVAS_TOKEN" | laurus setup --token-stdin --url https://canvas.school.edu --yes
+
+# 2. Verify. Exit code is non-zero when any check fails.
+laurus doctor --json && echo ok
+
+# 3. Wire it into Claude Code (token already in the keychain after step 1):
+claude mcp add laurus -- laurus mcp serve
+
+# Or skip setup entirely and pass everything through the environment:
+claude mcp add laurus -e CANVAS_TOKEN=... -e CANVAS_URL=https://canvas.school.edu -- laurus mcp serve
+```
+
+`laurus mcp install --client claude-code|cursor|vscode` writes the same
+entry into the project's `.mcp.json`, `.cursor/mcp.json`, or
+`.vscode/mcp.json` (merging with what is there; `--print` to just show it).
+A `.mcp.json` that reads the token from the environment:
+
+```json
+{
+  "mcpServers": {
+    "laurus": {
+      "command": "laurus",
+      "args": ["mcp", "serve"],
+      "env": {
+        "CANVAS_TOKEN": "${CANVAS_TOKEN}",
+        "CANVAS_URL": "https://canvas.school.edu"
+      }
+    }
+  }
+}
+```
+
+Add `--read-only` to the `serve` args when the assistant should never be
+able to submit, post, send, or book anything in Canvas; the write tools are
+then not registered at all.
 
 ---
 
