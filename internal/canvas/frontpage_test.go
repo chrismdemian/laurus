@@ -109,6 +109,7 @@ func TestParseFileRef(t *testing.T) {
 	}{
 		{"44730205", 44730205, true},
 		{" 44730205 ", 44730205, true},
+		{"12345", 12345, true},
 		{"https://q.utoronto.ca/courses/468353/files/44730205", 44730205, true},
 		{"/courses/468353/files/44730205", 44730205, true},
 		{"/courses/468353/files/44730205/download?download_frd=1", 44730205, true},
@@ -123,6 +124,16 @@ func TestParseFileRef(t *testing.T) {
 		{"", 0, false},
 		{"0", 0, false},
 		{"-5", 0, false},
+		{"+5", 0, false},
+		{"+44730205", 0, false},
+		{"-44730205", 0, false},
+		// Short numbers are file names far more often than file IDs: Canvas
+		// file IDs run to seven or eight digits.
+		{"2024", 0, false},
+		{"1", 0, false},
+		{"0044730205", 44730205, true},
+		// A short ID is still honoured inside a real Canvas link.
+		{"/courses/468353/files/42", 42, true},
 	}
 
 	for _, tt := range tests {
@@ -201,5 +212,60 @@ func TestDownloadFromURL_SizeUncheckedWhenZero(t *testing.T) {
 	var buf bytes.Buffer
 	if _, err := DownloadFromURL(context.Background(), srv.URL, 0, &buf); err != nil {
 		t.Fatalf("unexpected error with no expected size: %v", err)
+	}
+}
+
+func TestDownloadFromURL_ErrorNeverLeaksTheVerifier(t *testing.T) {
+	const verifier = "b3da8595-ef90-4cdd-9afc-9b67361b3a07"
+
+	// A server that is already closed, so the transport fails and Go quotes
+	// the whole URL back in its error.
+	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	deadURL := dead.URL + "/files/44730205/download?download_frd=1&verifier=" + verifier
+	dead.Close()
+
+	var buf bytes.Buffer
+	_, err := DownloadFromURL(context.Background(), deadURL, 0, &buf)
+	if err == nil {
+		t.Fatal("expected a transport error from a closed server")
+	}
+	if strings.Contains(err.Error(), verifier) {
+		t.Errorf("error leaks the verifier token: %v", err)
+	}
+	if strings.Contains(err.Error(), "verifier=") && !strings.Contains(err.Error(), "verifier=REDACTED") {
+		t.Errorf("error carries an unredacted verifier parameter: %v", err)
+	}
+	// The redaction must not swallow the diagnosis.
+	if !strings.Contains(err.Error(), "downloading file") {
+		t.Errorf("error = %v, want it to still say what failed", err)
+	}
+}
+
+func TestRedactURLs(t *testing.T) {
+	const raw = "https://q.utoronto.ca/files/44730205/download?download_frd=1&verifier=secret-token"
+
+	tests := []struct {
+		name string
+		msg  string
+	}{
+		{"quoted whole url", `Get "` + raw + `": dial tcp: connection refused`},
+		{"url with no quotes", "Get " + raw + ": EOF"},
+		{"verifier alone", "failed for verifier=secret-token"},
+		{"verifier mid-query", "url ?a=1&verifier=secret-token&b=2 failed"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := redactURLs(tt.msg, raw)
+			if strings.Contains(got, "secret-token") {
+				t.Errorf("redactURLs(%q) = %q, still carries the token", tt.msg, got)
+			}
+		})
+	}
+
+	// A message with nothing sensitive must come back unchanged.
+	plain := "downloading file: HTTP 404"
+	if got := redactURLs(plain, raw); got != plain {
+		t.Errorf("redactURLs(%q) = %q, want it unchanged", plain, got)
 	}
 }

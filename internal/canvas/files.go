@@ -95,12 +95,13 @@ func DownloadFile(ctx context.Context, c *Client, fileID int64, dest io.Writer) 
 func DownloadFromURL(ctx context.Context, rawURL string, expectedSize int64, dest io.Writer) (int64, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
-		return 0, fmt.Errorf("creating download request: %w", err)
+		return 0, fmt.Errorf("creating download request: %s", redactURLs(err.Error(), rawURL))
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("downloading file: %w", err)
+		// Transport errors quote the whole URL, verifier token and all.
+		return 0, fmt.Errorf("downloading file: %s", redactURLs(err.Error(), rawURL))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -118,13 +119,29 @@ func DownloadFromURL(ctx context.Context, rawURL string, expectedSize int64, des
 
 	n, err := io.Copy(dest, resp.Body)
 	if err != nil {
-		return n, fmt.Errorf("writing file: %w", err)
+		return n, fmt.Errorf("writing file: %s", redactURLs(err.Error(), rawURL))
 	}
 
 	if expectedSize > 0 && n != expectedSize {
 		return n, fmt.Errorf("downloading file: got %d bytes, expected %d", n, expectedSize)
 	}
 	return n, nil
+}
+
+// verifierPattern matches the credential Canvas puts in a file URL's query.
+var verifierPattern = regexp.MustCompile(`(?i)verifier=[^&\s"'` + "`" + `]*`)
+
+// redactURLs removes the query string of rawURL wherever the message quotes
+// it, then strips any remaining verifier parameter. A Canvas file URL's
+// verifier grants access to the file, so it must not survive into an error
+// that is printed, logged, or handed to a model.
+func redactURLs(msg, rawURL string) string {
+	if rawURL != "" {
+		if i := strings.IndexByte(rawURL, '?'); i >= 0 {
+			msg = strings.ReplaceAll(msg, rawURL, rawURL[:i])
+		}
+	}
+	return verifierPattern.ReplaceAllString(msg, "verifier=REDACTED")
 }
 
 // FindFile resolves a fuzzy query to a single file within a course.
@@ -166,6 +183,12 @@ func FindFile(ctx context.Context, c *Client, courseID int64, query string) (Fil
 // fileRefPattern matches the /files/<id> segment of a Canvas file link.
 var fileRefPattern = regexp.MustCompile(`/files/(\d+)(?:/|\?|#|$)`)
 
+// bareIDPattern matches a bare Canvas file ID. Canvas file IDs run to seven or
+// eight digits, so requiring at least five keeps short numbers as names: a
+// course file called "2024" is looked up by name, not fetched as a file ID.
+// A sign is never part of an ID, so "+5" and "-5" are names too.
+var bareIDPattern = regexp.MustCompile(`^\d{5,}$`)
+
 // ParseFileRef extracts a Canvas file ID from a bare numeric string or from a
 // Canvas file URL/path containing a "/files/<id>" segment. It reports false
 // when the query is a file name rather than a reference.
@@ -175,8 +198,10 @@ func ParseFileRef(query string) (int64, bool) {
 		return 0, false
 	}
 
-	if id, err := strconv.ParseInt(q, 10, 64); err == nil && id > 0 {
-		return id, true
+	if bareIDPattern.MatchString(q) {
+		if id, err := strconv.ParseInt(q, 10, 64); err == nil && id > 0 {
+			return id, true
+		}
 	}
 
 	if m := fileRefPattern.FindStringSubmatch(q); m != nil {
