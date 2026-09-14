@@ -7,6 +7,8 @@ import (
 	"iter"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -78,13 +80,18 @@ func DownloadFile(ctx context.Context, c *Client, fileID int64, dest io.Writer) 
 	if err != nil {
 		return 0, fmt.Errorf("getting download URL: %w", err)
 	}
+	return DownloadFromURL(ctx, publicURL, dest)
+}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", publicURL, nil)
+// DownloadFromURL downloads a pre-authorized Canvas file URL to dest using a
+// plain HTTP client. Canvas file URLs carry their own verifier token, so no
+// auth headers are sent to the external S3/CDN host.
+func DownloadFromURL(ctx context.Context, rawURL string, dest io.Writer) (int64, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("creating download request: %w", err)
 	}
 
-	// Use a plain HTTP client — the pre-signed URL needs no auth headers
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("downloading file: %w", err)
@@ -136,4 +143,29 @@ func FindFile(ctx context.Context, c *Client, courseID int64, query string) (Fil
 
 	// Server-side search returned results but no exact/substring match — return first result
 	return files[0], nil
+}
+
+// fileRefPattern matches the /files/<id> segment of a Canvas file link.
+var fileRefPattern = regexp.MustCompile(`/files/(\d+)(?:/|\?|#|$)`)
+
+// ParseFileRef extracts a Canvas file ID from a bare numeric string or from a
+// Canvas file URL/path containing a "/files/<id>" segment. It reports false
+// when the query is a file name rather than a reference.
+func ParseFileRef(query string) (int64, bool) {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return 0, false
+	}
+
+	if id, err := strconv.ParseInt(q, 10, 64); err == nil && id > 0 {
+		return id, true
+	}
+
+	if m := fileRefPattern.FindStringSubmatch(q); m != nil {
+		id, err := strconv.ParseInt(m[1], 10, 64)
+		if err == nil && id > 0 {
+			return id, true
+		}
+	}
+	return 0, false
 }

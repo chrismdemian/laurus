@@ -97,3 +97,16 @@ func FindPage(ctx context.Context, c *Client, courseID int64, query string) (Pag
 
 	return Page{}, fmt.Errorf("no page matching %q: %w", query, ErrNotFound)
 }
+
+// GetFrontPage retrieves the course front page.
+// Courses whose default_view is "wiki" keep their syllabus and key information
+// here rather than in syllabus_body. The endpoint answers even when the Pages
+// tab is disabled. Courses with no front page return ErrNotFound.
+func GetFrontPage(ctx context.Context, c *Client, courseID int64) (Page, error) {
+	path := fmt.Sprintf("/api/v1/courses/%d/front_page", courseID)
+	page, err := Get[Page](ctx, c, path, nil)
+	if err != nil {
+		return Page{}, fmt.Errorf("getting front page for course %d: %w", courseID, err)
+	}
+	return page, nil
+}

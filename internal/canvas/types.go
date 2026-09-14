@@ -29,6 +29,11 @@ type Course struct {
 	HTMLURL                     string       `json:"html_url"`
 	ApplyAssignmentGroupWeights bool         `json:"apply_assignment_group_weights"`
 	GradingStandardID           *int64       `json:"grading_standard_id"`
+
+	// DefaultView is the course landing tab: "feed", "wiki", "modules",
+	// "syllabus" or "assignments". A "wiki" course keeps its key information
+	// on the front page rather than in syllabus_body.
+	DefaultView string `json:"default_view"`
 }
 
 // User represents a Canvas user profile.
