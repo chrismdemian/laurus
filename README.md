@@ -71,6 +71,8 @@ The daily drivers. Fast, scriptable, pipe-friendly.
 
 | Command | Description |
 |---------|-------------|
+| `laurus course <course>` | Course details, including the front page for wiki courses (`--home`, `--syllabus`) |
+| `laurus download <course> <file>` | Download a file by name, numeric file ID, or Canvas file link |
 | `laurus next` | Next due assignment across all courses |
 | `laurus assignments` | All upcoming assignments, sorted by urgency |
 | `laurus grades` | Current grades across all courses |
@@ -81,6 +83,16 @@ The daily drivers. Fast, scriptable, pipe-friendly.
 | `laurus calendar --export` | Export deadlines to `.ics` |
 | `laurus inbox` | Read and send Canvas messages |
 | `laurus search <query>` | AI-powered semantic search across courses |
+
+Some courses set their default view to the wiki and keep the syllabus, schedule
+and reading list on the course **front page** rather than in the syllabus tab.
+`laurus course <course>` shows the front page inline and reports the course's
+default view; `--home` shows only the front page, and `--syllabus` falls back to
+it when the syllabus is empty. Those courses often hide the Files tab too, so
+file names cannot be searched. Copy the file link from the front page and pass
+its ID: `laurus download <course> 44730205`, or paste the whole URL. The MCP
+server exposes the same thing through `get_front_page`, and `get_course` carries
+`default_view` and `front_page`.
 
 Every command supports `--json` for scripting. `laurus status` reads only the local cache and `laurus courses --cached` serves from it; other commands are live and refresh the cache as they go.
 
