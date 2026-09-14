@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -80,13 +81,18 @@ func DownloadFile(ctx context.Context, c *Client, fileID int64, dest io.Writer) 
 	if err != nil {
 		return 0, fmt.Errorf("getting download URL: %w", err)
 	}
-	return DownloadFromURL(ctx, publicURL, dest)
+	return DownloadFromURL(ctx, publicURL, 0, dest)
 }
 
 // DownloadFromURL downloads a pre-authorized Canvas file URL to dest using a
 // plain HTTP client. Canvas file URLs carry their own verifier token, so no
 // auth headers are sent to the external S3/CDN host.
-func DownloadFromURL(ctx context.Context, rawURL string, dest io.Writer) (int64, error) {
+//
+// expectedSize, when positive, is the size Canvas reported for the file: a
+// download that does not match it is reported as an error rather than written
+// off as a success. An HTML response is rejected outright, because a login or
+// error page answers with 200 and would otherwise land on disk as the file.
+func DownloadFromURL(ctx context.Context, rawURL string, expectedSize int64, dest io.Writer) (int64, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("creating download request: %w", err)
@@ -102,9 +108,21 @@ func DownloadFromURL(ctx context.Context, rawURL string, dest io.Writer) (int64,
 		return 0, fmt.Errorf("downloading file: HTTP %d", resp.StatusCode)
 	}
 
+	// A Canvas login or error page answers 200 with HTML. No Canvas file
+	// download is served as text/html, so treat one as a failed download.
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		if mediaType, _, mErr := mime.ParseMediaType(ct); mErr == nil && mediaType == "text/html" {
+			return 0, fmt.Errorf("downloading file: server returned an HTML page, not the file (content-type %s)", ct)
+		}
+	}
+
 	n, err := io.Copy(dest, resp.Body)
 	if err != nil {
 		return n, fmt.Errorf("writing file: %w", err)
+	}
+
+	if expectedSize > 0 && n != expectedSize {
+		return n, fmt.Errorf("downloading file: got %d bytes, expected %d", n, expectedSize)
 	}
 	return n, nil
 }

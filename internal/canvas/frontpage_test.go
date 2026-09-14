@@ -1,10 +1,13 @@
 package canvas
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -127,5 +130,76 @@ func TestParseFileRef(t *testing.T) {
 		if gotID != tt.wantID || gotOK != tt.wantOK {
 			t.Errorf("ParseFileRef(%q) = (%d, %v), want (%d, %v)", tt.query, gotID, gotOK, tt.wantID, tt.wantOK)
 		}
+	}
+}
+
+func TestDownloadFromURL_OK(t *testing.T) {
+	payload := []byte("%PDF-1.5 pretend pdf bytes")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write(payload)
+	}))
+	t.Cleanup(srv.Close)
+
+	var buf bytes.Buffer
+	n, err := DownloadFromURL(context.Background(), srv.URL, int64(len(payload)), &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != int64(len(payload)) {
+		t.Errorf("n = %d, want %d", n, len(payload))
+	}
+	if !bytes.Equal(buf.Bytes(), payload) {
+		t.Errorf("body = %q, want %q", buf.Bytes(), payload)
+	}
+}
+
+func TestDownloadFromURL_SizeMismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write([]byte("short"))
+	}))
+	t.Cleanup(srv.Close)
+
+	var buf bytes.Buffer
+	_, err := DownloadFromURL(context.Background(), srv.URL, 98348, &buf)
+	if err == nil {
+		t.Fatal("expected an error when the download is not the size Canvas reported")
+	}
+	if !strings.Contains(err.Error(), "expected 98348") {
+		t.Errorf("error = %v, want it to name the expected size", err)
+	}
+}
+
+func TestDownloadFromURL_RejectsHTML(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<html><body>Please log in</body></html>"))
+	}))
+	t.Cleanup(srv.Close)
+
+	var buf bytes.Buffer
+	_, err := DownloadFromURL(context.Background(), srv.URL, 0, &buf)
+	if err == nil {
+		t.Fatal("expected an error when the server answers with an HTML page")
+	}
+	if !strings.Contains(err.Error(), "HTML page") {
+		t.Errorf("error = %v, want it to say the response was an HTML page", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("wrote %d bytes of the HTML page, want none", buf.Len())
+	}
+}
+
+func TestDownloadFromURL_SizeUncheckedWhenZero(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write([]byte("whatever length"))
+	}))
+	t.Cleanup(srv.Close)
+
+	var buf bytes.Buffer
+	if _, err := DownloadFromURL(context.Background(), srv.URL, 0, &buf); err != nil {
+		t.Fatalf("unexpected error with no expected size: %v", err)
 	}
 }

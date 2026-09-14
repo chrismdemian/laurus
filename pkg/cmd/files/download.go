@@ -24,7 +24,7 @@ func NewCmdDownload(f *cmdutil.Factory) *cobra.Command {
 		Long: "Download a file from a course to the current directory or a specified path.\n\n" +
 			"<file> may be a file name, a numeric Canvas file ID, or a Canvas file link\n" +
 			"copied from a page. An ID or link is fetched directly, which works in courses\n" +
-			"whose Files tab is hidden.",
+			"whose Files tab is hidden; <course> is used only for name lookups.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return downloadRun(f, args[0], args[1], outputPath)
@@ -47,7 +47,9 @@ func downloadRun(f *cmdutil.Factory, courseQuery, fileQuery, outputPath string) 
 	// A numeric ID or a Canvas file link resolves through the user-scoped
 	// files endpoint, which answers even when the course Files tab is hidden.
 	var file canvas.File
+	byID := false
 	if fileID, ok := canvas.ParseFileRef(fileQuery); ok {
+		byID = true
 		file, err = canvas.GetFile(ctx, client, fileID)
 		if err != nil {
 			if errors.Is(err, canvas.ErrForbidden) || errors.Is(err, canvas.ErrPermissionDenied) {
@@ -104,12 +106,13 @@ func downloadRun(f *cmdutil.Factory, courseQuery, fileQuery, outputPath string) 
 	}
 	defer func() { _ = out.Close() }()
 
-	// The by-ID response carries a verifier-signed URL that works without the
-	// course files scope; fall back to the pre-signed public URL otherwise.
+	// A file reached by ID carries a verifier-signed URL that works without the
+	// course files scope, which is the whole point of that path; a file found
+	// by name keeps the pre-signed public_url route that has always worked.
 	// Neither request sends auth headers to the CDN.
 	var n int64
-	if file.URL != "" {
-		n, err = canvas.DownloadFromURL(ctx, file.URL, out)
+	if byID && file.URL != "" {
+		n, err = canvas.DownloadFromURL(ctx, file.URL, file.Size, out)
 	} else {
 		n, err = canvas.DownloadFile(ctx, client, file.ID, out)
 	}
