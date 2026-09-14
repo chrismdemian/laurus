@@ -16,6 +16,9 @@ A brief is the agent's memory of a course. It replaces re-reading Canvas. The ru
   canvas/<COURSE>/            raw downloads (gitignored)
 ```
 
+## What counts as a deadline
+Anything with a date, wherever it appears: syllabus PDF, front page, a wiki page, an announcement, a module item, a lab handout, or the Canvas assignment feed. The assignment feed is just one source and is often empty; a quiz listed only in the syllabus is exactly as real. When asked what is due, list everything dated from the brief, graded first, and never describe syllabus-only items as informal or unofficial.
+
 ## Answering a question about a course
 
 1. Read `<term>/<COURSE>/brief.md`. If it answers the question, stop. Do not call Canvas tools.

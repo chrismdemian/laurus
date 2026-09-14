@@ -36,6 +36,7 @@ func NewCmdCourses(f *cmdutil.Factory) *cobra.Command {
 // NewCmdCourse returns the top-level singular "course" alias for viewing a specific course.
 func NewCmdCourse(f *cmdutil.Factory) *cobra.Command {
 	var syllabus bool
+	var home bool
 
 	cmd := &cobra.Command{
 		Use:   "course <name>",
@@ -43,11 +44,12 @@ func NewCmdCourse(f *cmdutil.Factory) *cobra.Command {
 		Long:  "Show detailed information about a course. Accepts course code, name, or ID.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return ViewCourse(f, args[0], syllabus)
+			return ViewCourse(f, args[0], syllabus, home)
 		},
 	}
 
-	cmd.Flags().BoolVarP(&syllabus, "syllabus", "s", false, "Show only the syllabus")
+	cmd.Flags().BoolVarP(&syllabus, "syllabus", "s", false, "Show only the syllabus (falls back to the front page for wiki courses)")
+	cmd.Flags().BoolVar(&home, "home", false, "Show only the course front page")
 
 	return cmd
 }

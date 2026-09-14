@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -26,14 +28,13 @@ func (s *Server) registerFileTools(srv *server.MCPServer) {
 
 	srv.AddTool(
 		mcplib.NewTool("get_file",
-			mcplib.WithDescription("Get details and download URL for a specific file."),
+			mcplib.WithDescription("Get details and download URL for a specific file. A numeric file ID or a Canvas file link is fetched directly, which works even in courses whose Files tab is hidden."),
 			mcplib.WithString("course",
-				mcplib.Required(),
-				mcplib.Description("Course name, code, or ID"),
+				mcplib.Description("Course name, code, or ID. Required unless file is a numeric file ID or a Canvas file link."),
 			),
 			mcplib.WithString("file",
 				mcplib.Required(),
-				mcplib.Description("File name or ID"),
+				mcplib.Description("File name, numeric file ID, or a Canvas file link such as /courses/123/files/456"),
 			),
 		),
 		mcplib.NewTypedToolHandler(s.handleGetFile),
@@ -102,16 +103,6 @@ func (s *Server) handleGetFile(ctx context.Context, _ mcplib.CallToolRequest, ar
 		return toolError(err)
 	}
 
-	course, err := s.findCourse(ctx, args.Course)
-	if err != nil {
-		return toolError(err)
-	}
-
-	file, err := canvas.FindFile(ctx, client, course.ID, args.File)
-	if err != nil {
-		return toolError(err)
-	}
-
 	type fileDetail struct {
 		ID          int64     `json:"id"`
 		Name        string    `json:"name"`
@@ -119,6 +110,32 @@ func (s *Server) handleGetFile(ctx context.Context, _ mcplib.CallToolRequest, ar
 		ContentType string    `json:"content_type"`
 		UpdatedAt   time.Time `json:"updated_at"`
 		URL         string    `json:"url"`
+	}
+
+	var file canvas.File
+
+	// A numeric ID or a Canvas file link resolves through the user-scoped
+	// files endpoint, with no course listing and no course argument needed.
+	if fileID, ok := canvas.ParseFileRef(args.File); ok {
+		file, err = canvas.GetFile(ctx, client, fileID)
+		if err != nil {
+			return toolError(err)
+		}
+	} else {
+		if strings.TrimSpace(args.Course) == "" {
+			return mcplib.NewToolResultError("course is required unless file is a numeric file ID or a Canvas file link"), nil
+		}
+		course, cErr := s.findCourse(ctx, args.Course)
+		if cErr != nil {
+			return toolError(cErr)
+		}
+		file, err = canvas.FindFile(ctx, client, course.ID, args.File)
+		if err != nil {
+			if errors.Is(err, canvas.ErrForbidden) || errors.Is(err, canvas.ErrPermissionDenied) {
+				return mcplib.NewToolResultError("This course hides its file list, so names cannot be searched. Pass the numeric file ID or the Canvas file link from the page instead."), nil
+			}
+			return toolError(err)
+		}
 	}
 
 	return liveResult(fileDetail{
