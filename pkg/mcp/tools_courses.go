@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -142,12 +143,14 @@ func (s *Server) handleGetCourse(ctx context.Context, _ mcplib.CallToolRequest, 
 		HTMLURL:     full.HTMLURL,
 	}
 
-	// A wiki course keeps its key information on the front page. A course
-	// without one, or one the account may not read, is not an error here.
-	if fp, err := frontPage(ctx, client, full.ID); err != nil {
-		return toolError(err)
-	} else if fp != nil {
-		detail.FrontPage = fp
+	// A wiki course keeps its key information on the front page, but the rest
+	// of get_course does not depend on it: a course with no front page, or a
+	// front page this call could not read, degrades to a note on the envelope.
+	fp, fpErr := frontPage(ctx, client, full.ID)
+	detail.FrontPage = fp
+	note := ""
+	if fpErr != nil {
+		note = "front page could not be read: " + unwrapMessage(fpErr)
 	}
 
 	for _, t := range full.Teachers {
@@ -168,6 +171,9 @@ func (s *Server) handleGetCourse(ctx context.Context, _ mcplib.CallToolRequest, 
 		}
 	}
 
+	if note != "" {
+		return jsonResult(envelope{AsOf: time.Now().UTC(), Source: sourceLive, Note: note, Data: detail})
+	}
 	return liveResult(detail)
 }
 
@@ -177,12 +183,13 @@ type frontPageData struct {
 	Body  string `json:"body"`
 }
 
-// frontPage fetches a course front page, returning nil when the course has
-// none or the account may not read it.
+// frontPage fetches a course front page. A course with no front page yields
+// (nil, nil); anything else that went wrong yields the error, for the caller
+// to report without failing the tool.
 func frontPage(ctx context.Context, client *canvas.Client, courseID int64) (*frontPageData, error) {
 	page, err := canvas.GetFrontPage(ctx, client, courseID)
 	if err != nil {
-		if errors.Is(err, canvas.ErrNotFound) || errors.Is(err, canvas.ErrForbidden) {
+		if errors.Is(err, canvas.ErrNotFound) {
 			return nil, nil
 		}
 		return nil, err

@@ -38,12 +38,21 @@ func ViewCourse(f *cmdutil.Factory, query string, syllabus, home bool) error {
 	}
 
 	// Courses whose default view is the wiki keep their key information on the
-	// front page. Fetch it for every view that might show it; a course without
-	// one is not an error.
-	frontPage, err := fetchFrontPage(ctx, client, course.ID)
-	if err != nil {
-		return err
+	// front page. --home asks for the front page and nothing else, so there a
+	// failure is the command's failure; every other view treats an unreadable
+	// front page as one it simply cannot show.
+	if home && !ios.IsJSON {
+		page, err := canvas.GetFrontPage(ctx, client, course.ID)
+		if err != nil {
+			if errors.Is(err, canvas.ErrNotFound) {
+				return renderFrontPageOnly(f, course, nil)
+			}
+			return fmt.Errorf("fetching front page: %w", err)
+		}
+		return renderFrontPageOnly(f, course, &page)
 	}
+
+	frontPage := fetchFrontPage(ctx, client, course.ID, ios)
 
 	if ios.IsJSON {
 		out := courseJSON{Course: course}
@@ -55,10 +64,6 @@ func ViewCourse(f *cmdutil.Factory, query string, syllabus, home bool) error {
 			out.FrontPage = &frontPageJSON{Title: frontPage.Title, Body: body}
 		}
 		return cmdutil.RenderJSON(ios, out)
-	}
-
-	if home {
-		return renderFrontPageOnly(f, course, frontPage)
 	}
 
 	if syllabus {
@@ -80,17 +85,19 @@ type frontPageJSON struct {
 	Body  string `json:"body"`
 }
 
-// fetchFrontPage returns the course front page, or nil when the course has
-// none or the caller may not read it. Any other failure is returned.
-func fetchFrontPage(ctx context.Context, client *canvas.Client, courseID int64) (*canvas.Page, error) {
+// fetchFrontPage returns the course front page, or nil when there is none to
+// show. The front page is a bonus in every view except --home, so no failure
+// here fails the command: a course that has none stays silent, and anything
+// else (a refusal, a rate limit, a timeout) leaves a note on stderr.
+func fetchFrontPage(ctx context.Context, client *canvas.Client, courseID int64, ios *iostreams.IOStreams) *canvas.Page {
 	page, err := canvas.GetFrontPage(ctx, client, courseID)
 	if err != nil {
-		if errors.Is(err, canvas.ErrNotFound) || errors.Is(err, canvas.ErrForbidden) {
-			return nil, nil
+		if !errors.Is(err, canvas.ErrNotFound) {
+			_, _ = fmt.Fprintf(ios.ErrOut, "Could not read the course front page: %v\n", err)
 		}
-		return nil, fmt.Errorf("fetching front page: %w", err)
+		return nil
 	}
-	return &page, nil
+	return &page
 }
 
 // frontPageBody returns the front page HTML if there is any to show.
@@ -123,6 +130,10 @@ func renderFrontPageOnly(f *cmdutil.Factory, course canvas.Course, page *canvas.
 		view := course.DefaultView
 		if view == "" {
 			view = "unknown"
+		}
+		if page != nil {
+			_, _ = fmt.Fprintln(ios.Out, "Front page is empty.")
+			return nil
 		}
 		_, _ = fmt.Fprintf(ios.Out, "No front page (default view: %s).\n", view)
 		return nil
