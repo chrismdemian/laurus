@@ -71,7 +71,7 @@ The daily drivers. Fast, scriptable, pipe-friendly.
 
 | Command | Description |
 |---------|-------------|
-| `laurus course <course>` | Course details, including the front page for wiki courses (`--home`, `--syllabus`) |
+| `laurus course <course>` | Course details, including the course front page whenever there is one (`--home`, `--syllabus`) |
 | `laurus download <course> <file>` | Download a file by name, numeric file ID, or Canvas file link (`<course>` is used only for name lookups) |
 | `laurus next` | Next due assignment across all courses |
 | `laurus assignments` | All upcoming assignments, sorted by urgency |
@@ -86,14 +86,13 @@ The daily drivers. Fast, scriptable, pipe-friendly.
 
 Some courses set their default view to the wiki and keep the syllabus, schedule
 and reading list on the course **front page** rather than in the syllabus tab.
-`laurus course <course>` shows the front page inline and reports the course's
-default view; `--home` shows only the front page, and `--syllabus` falls back to
-it when the syllabus is empty on a course whose default view is the wiki.
+`laurus course <course>` reports the course's default view and shows the front
+page inline for any course that has one, wiki or not. `--home` shows only the
+front page, and `--syllabus` falls back to it when the syllabus is empty on a
+course whose default view is the wiki.
 Those courses often hide the Files tab too, so file names cannot be searched.
 Copy the file link from the front page and pass its ID:
-`laurus download <course> 44730205`, or paste the whole URL. The MCP
-server exposes the same thing through `get_front_page`, and `get_course` carries
-`default_view` and `front_page`.
+`laurus download <course> 44730205`, or paste the whole URL.
 
 Every command supports `--json` for scripting. `laurus status` reads only the local cache and `laurus courses --cached` serves from it; other commands are live and refresh the cache as they go.
 
@@ -133,6 +132,13 @@ reading a conversation, grade calculations) are always live. Pass
 `search_local_files` to grep the course files you downloaded with
 `laurus sync files` or `laurus download-all` (their contents are treated
 as untrusted text).
+
+`get_front_page` returns a course's front page, which is where a course whose
+default view is the wiki keeps its syllabus, schedule and reading list; it is
+readable even when the Pages tab is disabled. `get_course` carries the same
+front page alongside `default_view`, and `get_file` takes a numeric file ID or
+a Canvas file link with no course argument, for courses that hide their Files
+tab.
 
 ### Grade Calculator
 
