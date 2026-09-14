@@ -35,7 +35,9 @@ Use the Laurus MCP tools (`canvas` server). Pull only what can have changed:
 | Assignments | `list_assignments` (course_id) | "Key dates" and marking tables |
 | Modules / files | `list_modules` | "Files" section; download new syllabus-like files with `laurus download-all <id> -o canvas/<COURSE>` |
 | Pages | `list_pages` / `get_page` | only pages named schedule, syllabus, evaluation, marks, office hours, project |
-| Syllabus body | `get_course` with syllabus | "Marking scheme", "Office hours", "Policies" |
+| Syllabus body | `get_course` (also returns `default_view` and `front_page`) | "Marking scheme", "Office hours", "Policies" |
+| Front page | `get_front_page` (course_id). Courses with `default_view: wiki` keep the syllabus link, staff, dates, and weekly topics here even when Pages is disabled | everything above, plus "Weekly log" |
+| Files linked from pages | `get_file` with the bare file id from the link (`/files/<id>`); works even when the course Files tab is hidden. CLI: `laurus download <course> <id> -o <path>` | "Files" section; download syllabus PDFs into `canvas/<COURSE>/` |
 | Grades | `get_grades` | only when asked; do not store grades in the brief |
 
 Then edit the brief in place:
@@ -66,6 +68,7 @@ Every brief has these sections in this order. Omit a section only if the course 
 
 - Dates in America/Toronto local time. Canvas returns UTC; a `22:10Z` due time in September is 6:10 PM ET.
 - Course ids: the number in the Canvas URL. Keep it in the brief so tools can be called without a lookup.
-- Files tab may return 403 while module downloads still work. Say so in Notes rather than retrying.
+- Files tab may return 403 while module downloads and file-by-id downloads still work. Use the file id from the page link. Some ids are refused even then; note them in the brief and move on.
+- Always check `default_view`. If it is `wiki`, the front page is the primary source and must be read on every refresh.
 - Never write a Canvas token, cookie, or personal grade into a brief.
 - Starting a new term: create `<term>/`, run a full pull for each course (syllabus, assignments, modules, pages, announcements, files), write briefs from scratch, then the term README.
