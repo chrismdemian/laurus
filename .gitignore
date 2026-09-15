@@ -36,7 +36,7 @@ coverage.html
 
 # Claude Code
 CLAUDE.md
-AGENTS.md
+# AGENTS.md is tracked — it is the shared, tool-agnostic contributor config (2026-09-14).
 PRODUCT.md
 BUILD_PLAN.md
 research-*.md
