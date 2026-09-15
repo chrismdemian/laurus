@@ -52,6 +52,8 @@ and GitHub Actions.
 
 - docs/CANVAS-GOTCHAS.md — Canvas behaviours that have already broken Laurus, plus the grade
   calculator parity rules. Grep it when a Canvas call behaves oddly.
+- docs/process/working-posture-and-roadmap.md — working posture and the Phase 9 roadmap steer,
+  moved out of the preamble on 2026-09-14. `BUILD_PLAN.md` (local-only) owns roadmap state.
 - `.claude/rules/architecture.md` — the module layout in detail, auto-loaded on `internal/`,
   `pkg/` and `cmd/`.
 - `.claude/rules/canvas-api.md` — Canvas client rules, auto-loaded on `internal/canvas/` and
