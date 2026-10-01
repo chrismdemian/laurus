@@ -23,7 +23,8 @@ Anything with a date, wherever it appears: syllabus PDF, front page, a wiki page
 
 1. Read `<term>/<COURSE>/brief.md`. If it answers the question, stop. Do not call Canvas tools.
 2. If the brief is silent, or its `Last refreshed` line is older than 3 days and the question is time-sensitive (due dates, announcements, grades), run a refresh (below) and answer from the updated brief.
-3. Never read a syllabus PDF or a long Canvas page a second time. If you had to read one, its content belongs in the brief.
+3. Never re-read a syllabus PDF or a long Canvas page for a fact the brief already holds. If you had to read one, its content belongs in the brief.
+4. Exception, study planning. If the question is what to read, which problems to do, or what a test covers, open the schedule source named in the brief's lecture-schedule heading once. Check the brief's table against it before building the plan, and fix the brief if the two differ. A plan built on a lossy summary inherits its errors.
 
 ## Refreshing a brief
 
@@ -46,6 +47,9 @@ Then edit the brief in place:
 - Add new announcements to "Announcements log" as `- YYYY-MM-DD summary`, newest last. Keep entries to one line.
 - Move any date, weight, room, or policy change into the table it belongs in. Mark instructor-flagged tentative dates as **tentative**.
 - Do not append raw text. Summarise. A brief should stay under ~150 lines.
+- Schedules keep the source's granularity. A per-lecture schedule stays per lecture: lecture number, topic, and textbook sections exactly as the source gives them. Never merge lectures into weeks or widen section ranges. Name the source file in the table's heading so the table can be checked in one step.
+- When the repo keeps lecture notes, add an "Actual coverage" line under the schedule. Say what the lectures really covered, which topics were not on the schedule, and which lecture days have no notes (a notes timeline flags those).
+- Lab handouts and assignments: record the textbook sections and pages they cite. Translate them to the edition the course uses, because older handouts often cite older section numbers.
 - If the term README's "Term-wide dates" is affected (a midterm moved), update it too.
 
 ## Brief structure
@@ -59,7 +63,7 @@ Every brief has these sections in this order. Omit a section only if the course 
 5. Key dates table, chronological
 6. Policies (late, missed work, remark, email)
 7. Textbook / materials / tools
-8. Topics
+8. Topics / lecture schedule (per lecture, with textbook sections and an "Actual coverage" line; see Refreshing)
 9. Files (paths under `canvas/<COURSE>/`)
 10. Announcements log
 11. Notes (what is hidden on Canvas, what is TODO)
