@@ -34,7 +34,7 @@ Use the Laurus MCP tools (`canvas` server). Pull only what can have changed:
 |---|---|---|
 | Announcements | `list_announcements` (course_id, then `get_announcement` for bodies) | "Announcements log", and any dates/policy changes they carry into the tables |
 | Assignments | `list_assignments` (course_id) | "Key dates" and marking tables |
-| Modules / files | `list_modules` | "Files" section; download new syllabus-like files with `laurus download-all <id> -o canvas/<COURSE>` |
+| Modules / files | `list_modules` (every refresh, not only when an announcement mentions a file) | "Files" section. If any module file is not already listed in the brief's Files section, of any type (homework, lab handout, slides, not just syllabus-like), run `laurus download-all <id> -o canvas/<COURSE>`, then read the new file and move its dated items and requirements into the brief. An announcement summarising a handout is not a substitute for the handout: Homework 1 in ECE360 had 8 problems while its announcement listed 7 |
 | Pages | `list_pages` / `get_page` | only pages named schedule, syllabus, evaluation, marks, office hours, project |
 | Syllabus body | `get_course` (also returns `default_view` and `front_page`) | "Marking scheme", "Office hours", "Policies" |
 | Front page | `get_front_page` (course_id). Courses with `default_view: wiki` keep the syllabus link, staff, dates, and weekly topics here even when Pages is disabled | everything above, plus "Weekly log" |
